@@ -1,65 +1,76 @@
 import Image from "next/image";
 import { UserRound } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
 import type { Tables } from "@/lib/supabase/database.types";
 
 type TeamMember = Tables<"team_members">;
 
-function InfoRow({ label, value }: { label: string; value: string | number }) {
+function StatRow({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="flex flex-col gap-0.5 py-1.5 text-sm">
-      <span className="text-xs font-medium whitespace-nowrap uppercase tracking-wide text-muted-foreground">
+    <div className="flex items-baseline justify-between gap-3 border-b border-white/10 py-1.5 text-sm last:border-0">
+      <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
         {label}
       </span>
-      <span className="font-medium">{value}</span>
+      <span className="truncate text-right font-medium text-slate-200">{value}</span>
     </div>
   );
 }
 
 export function TeamMemberCard({ member }: { member: TeamMember }) {
+  const roster = String(member.sort_order).padStart(2, "0");
+
   return (
-    <Card className="group overflow-hidden py-0 transition-shadow hover:shadow-lg">
-      <div className="relative aspect-[3/4] w-full bg-muted">
+    <div className="group relative flex flex-col">
+      <span
+        aria-hidden
+        className="absolute -top-2 left-0 z-10 font-mono text-6xl font-black text-white/5 select-none sm:text-7xl"
+      >
+        {roster}
+      </span>
+
+      <div className="relative aspect-[3/4] w-full">
         {member.photo_url ? (
           <Image
             src={member.photo_url}
             alt={member.name}
             fill
-            className="object-cover"
+            className="object-contain object-bottom drop-shadow-[0_18px_28px_rgba(0,0,0,0.55)] transition-transform duration-300 ease-out group-hover:scale-[1.03]"
             sizes="(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw"
           />
         ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-2 border-b border-dashed border-border bg-gradient-to-b from-muted to-muted/60 text-muted-foreground">
-            <UserRound className="h-16 w-16" strokeWidth={1.25} />
+          <div className="flex h-full w-full flex-col items-center justify-end gap-2 pb-6 text-slate-600">
+            <UserRound className="h-16 w-16" strokeWidth={1} />
             <span className="text-xs">Photo coming soon</span>
           </div>
         )}
       </div>
 
-      <CardContent className="space-y-1 px-5 pb-6">
-        <h3 className="pt-1 text-lg font-semibold leading-tight">
-          {member.name}
-        </h3>
-
-        <div className="divide-y divide-border/60">
-          <InfoRow label="Year Level" value={member.year_level} />
-          <InfoRow label="Course" value={member.course} />
-          <InfoRow label="Age" value={member.age} />
-          <InfoRow label="Sex" value={member.sex} />
-          <InfoRow label="Address" value={member.address} />
-          <InfoRow label="Contact Number" value={member.contact_number} />
-          <InfoRow label="Email Address" value={member.email} />
+      <div className="relative z-10 -mt-1 space-y-3 px-1 pt-3">
+        <div>
+          <div className="h-0.5 w-10 bg-sky-400" />
+          <h3 className="mt-2 text-lg leading-tight font-black tracking-tight text-white uppercase">
+            {member.name}
+          </h3>
+          <p className="text-xs font-medium text-sky-400">{member.course}</p>
         </div>
 
-        <div className="mt-3 rounded-lg bg-muted/60 p-3">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <div>
+          <StatRow label="Year Level" value={member.year_level} />
+          <StatRow label="Age" value={member.age} />
+          <StatRow label="Sex" value={member.sex} />
+          <StatRow label="Address" value={member.address} />
+          <StatRow label="Contact Number" value={member.contact_number} />
+          <StatRow label="Email Address" value={member.email} />
+        </div>
+
+        <blockquote className="border-l-2 border-sky-400/60 pl-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
             5 Years From Now
           </p>
-          <p className="mt-1 text-sm italic leading-relaxed text-foreground/90">
+          <p className="mt-1 text-sm leading-relaxed text-slate-300 italic">
             &ldquo;{member.future_summary}&rdquo;
           </p>
-        </div>
-      </CardContent>
-    </Card>
+        </blockquote>
+      </div>
+    </div>
   );
 }

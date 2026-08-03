@@ -50,20 +50,27 @@ export default async function HomePage() {
           </div>
         </section>
 
-        <section className="border-t border-border/60 bg-muted/20 py-20">
-          <div className="mx-auto max-w-6xl px-6">
+        <section className="relative overflow-hidden bg-slate-950 py-20">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,rgba(56,189,248,0.12),transparent)]"
+          />
+          <div className="relative mx-auto max-w-6xl px-6">
             <div className="mx-auto max-w-2xl text-center">
-              <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
+              <p className="text-xs font-semibold tracking-[0.2em] text-sky-400 uppercase">
+                The Roster
+              </p>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">
                 Meet the Developers
               </h2>
-              <p className="mt-3 text-muted-foreground">
+              <p className="mt-3 text-slate-400">
                 BS Information Technology capstone project &middot; University
                 of Science and Technology of Southern Philippines, Villanueva
                 Campus
               </p>
             </div>
 
-            <div className="mt-12 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="mt-16 grid grid-cols-1 gap-x-6 gap-y-14 sm:grid-cols-2 lg:grid-cols-4">
               {teamMembers?.map((member) => (
                 <TeamMemberCard key={member.id} member={member} />
               ))}
