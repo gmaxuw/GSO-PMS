@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { createClient } from "@/lib/supabase/server";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,11 +15,23 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "GSO-PMS | Property Management System",
-  description:
-    "Property Management System for the General Services Office (GSO), Local Government Unit of Villanueva.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const supabase = await createClient();
+  const { data: siteSettings } = await supabase
+    .from("site_settings")
+    .select("favicon_url")
+    .eq("id", true)
+    .maybeSingle();
+
+  return {
+    title: "GSO-PMS | Property Management System",
+    description:
+      "Property Management System for the General Services Office (GSO), Local Government Unit of Villanueva.",
+    // Falls back to the static app/icon.svg + apple-icon.png file convention
+    // when no custom favicon has been uploaded in Settings > Branding.
+    icons: siteSettings?.favicon_url ? { icon: siteSettings.favicon_url } : undefined,
+  };
+}
 
 export default function RootLayout({
   children,

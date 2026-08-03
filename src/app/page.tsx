@@ -1,22 +1,23 @@
 import Link from "next/link";
-import { ArrowRight, Boxes } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TeamMemberCard } from "@/components/team-member-card";
+import { SiteLogo } from "@/components/site-logo";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function HomePage() {
   const supabase = await createClient();
-  const { data: teamMembers } = await supabase
-    .from("team_members")
-    .select("*")
-    .order("sort_order", { ascending: true });
+  const [{ data: teamMembers }, { data: siteSettings }] = await Promise.all([
+    supabase.from("team_members").select("*").order("sort_order", { ascending: true }),
+    supabase.from("site_settings").select("logo_url").eq("id", true).maybeSingle(),
+  ]);
 
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-10 border-b border-border/60 bg-background/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-2 font-semibold">
-            <Boxes className="h-5 w-5 text-primary" />
+            <SiteLogo logoUrl={siteSettings?.logo_url} className="h-5 w-5 text-primary" />
             <span>GSO-PMS</span>
           </div>
           <Button asChild size="sm">

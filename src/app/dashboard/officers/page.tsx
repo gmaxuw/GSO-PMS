@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { OfficerFormDialog } from "@/components/officer-form-dialog";
 import { DeleteButton } from "@/components/delete-button";
 import { StatusBadge } from "@/components/status-badge";
+import { PhotoLightbox } from "@/components/photo-lightbox";
 import { requireUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { deleteOfficer } from "./actions";
@@ -47,6 +48,7 @@ export default async function OfficersPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-14"></TableHead>
                 <TableHead>Employee No.</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Position</TableHead>
@@ -61,6 +63,12 @@ export default async function OfficersPage() {
               {officers && officers.length > 0 ? (
                 officers.map((officer) => (
                   <TableRow key={officer.officer_id}>
+                    <TableCell>
+                      <PhotoLightbox
+                        url={officer.photo_url}
+                        alt={`${officer.first_name} ${officer.last_name}`}
+                      />
+                    </TableCell>
                     <TableCell className="font-medium">
                       {officer.employee_no ?? "—"}
                     </TableCell>
@@ -98,7 +106,7 @@ export default async function OfficersPage() {
               ) : (
                 <TableRow>
                   <TableCell
-                    colSpan={8}
+                    colSpan={9}
                     className="py-10 text-center text-sm text-muted-foreground"
                   >
                     No accountable officers registered yet.

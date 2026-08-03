@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   ArrowLeftRight,
   BarChart3,
+  BookOpen,
   Boxes,
   Clock,
   FileText,
@@ -15,6 +16,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
+import { SiteLogo } from "@/components/site-logo";
 import {
   Sidebar,
   SidebarContent,
@@ -89,7 +91,13 @@ function NavGroup({
   );
 }
 
-export function AppSidebar({ profile }: { profile: Profile }) {
+export function AppSidebar({
+  profile,
+  logoUrl,
+}: {
+  profile: Profile;
+  logoUrl?: string | null;
+}) {
   const pathname = usePathname();
   const initials = (profile.full_name ?? profile.email ?? "?")
     .split(" ")
@@ -102,7 +110,10 @@ export function AppSidebar({ profile }: { profile: Profile }) {
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <div className="flex items-center gap-2 px-2 py-1.5">
-          <Boxes className="h-5 w-5 shrink-0 text-sidebar-primary" />
+          <SiteLogo
+            logoUrl={logoUrl}
+            className="h-5 w-5 shrink-0 text-sidebar-primary"
+          />
           <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
             <span className="text-sm font-semibold">GSO-PMS</span>
             <span className="text-xs text-sidebar-foreground/60">
@@ -120,6 +131,11 @@ export function AppSidebar({ profile }: { profile: Profile }) {
             label="System"
             items={[
               { href: "/dashboard/settings", label: "Settings", icon: Settings },
+              {
+                href: "/dashboard/documentation",
+                label: "Documentation",
+                icon: BookOpen,
+              },
             ]}
             pathname={pathname}
           />

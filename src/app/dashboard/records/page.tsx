@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Printer } from "lucide-react";
+import { Printer, QrCode } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -20,10 +20,14 @@ export default async function RecordsPage() {
   const [{ data: parRecords }, { data: icsRecords }] = await Promise.all([
     supabase
       .from("par_records")
-      .select("*, assets(asset_code, asset_name), accountable_officers(first_name, last_name)"),
+      .select(
+        "*, assets(asset_id, asset_code, asset_name), accountable_officers(first_name, last_name)",
+      ),
     supabase
       .from("ics_records")
-      .select("*, assets(asset_code, asset_name), accountable_officers(first_name, last_name)"),
+      .select(
+        "*, assets(asset_id, asset_code, asset_name), accountable_officers(first_name, last_name)",
+      ),
   ]);
 
   const combined = [
@@ -97,11 +101,20 @@ export default async function RecordsPage() {
                       {doc.remarks ?? "—"}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button asChild variant="ghost" size="sm">
-                        <Link href={doc.printHref}>
-                          <Printer className="h-4 w-4" /> Print
-                        </Link>
-                      </Button>
+                      <div className="flex justify-end gap-1">
+                        {doc.asset?.asset_id && (
+                          <Button asChild variant="ghost" size="sm">
+                            <Link href={`/dashboard/assets/${doc.asset.asset_id}/sticker`}>
+                              <QrCode className="h-4 w-4" /> Sticker
+                            </Link>
+                          </Button>
+                        )}
+                        <Button asChild variant="ghost" size="sm">
+                          <Link href={doc.printHref}>
+                            <Printer className="h-4 w-4" /> Print
+                          </Link>
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))

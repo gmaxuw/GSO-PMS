@@ -23,6 +23,7 @@ export type Database = {
           last_name: string
           office_id: number | null
           officer_id: number
+          photo_url: string | null
           position: string | null
           status: string
         }
@@ -34,6 +35,7 @@ export type Database = {
           last_name: string
           office_id?: number | null
           officer_id?: never
+          photo_url?: string | null
           position?: string | null
           status?: string
         }
@@ -45,6 +47,7 @@ export type Database = {
           last_name?: string
           office_id?: number | null
           officer_id?: never
+          photo_url?: string | null
           position?: string | null
           status?: string
         }
@@ -487,6 +490,27 @@ export type Database = {
           id?: string
           role?: string
           status?: string
+        }
+        Relationships: []
+      }
+      site_settings: {
+        Row: {
+          favicon_url: string | null
+          id: boolean
+          logo_url: string | null
+          updated_at: string
+        }
+        Insert: {
+          favicon_url?: string | null
+          id?: boolean
+          logo_url?: string | null
+          updated_at?: string
+        }
+        Update: {
+          favicon_url?: string | null
+          id?: boolean
+          logo_url?: string | null
+          updated_at?: string
         }
         Relationships: []
       }

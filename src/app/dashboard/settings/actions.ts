@@ -123,3 +123,86 @@ export async function deleteOffice(officeId: number) {
   revalidatePath("/dashboard/settings");
   return undefined;
 }
+
+function parseTeamMemberForm(formData: FormData) {
+  return {
+    name: formData.get("name") as string,
+    year_level: formData.get("year_level") as string,
+    course: formData.get("course") as string,
+    age: Number(formData.get("age")),
+    sex: formData.get("sex") as string,
+    address: formData.get("address") as string,
+    contact_number: formData.get("contact_number") as string,
+    email: formData.get("email") as string,
+    future_summary: formData.get("future_summary") as string,
+    photo_url: (formData.get("photo_url") as string) || null,
+    sort_order: Number(formData.get("sort_order")) || 0,
+  };
+}
+
+export async function createTeamMember(
+  _prevState: FormActionState,
+  formData: FormData,
+): Promise<FormActionState> {
+  await requireAdmin();
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("team_members").insert(parseTeamMemberForm(formData));
+  if (error) return { error: error.message };
+
+  revalidatePath("/dashboard/settings");
+  revalidatePath("/");
+  return { success: true };
+}
+
+export async function updateTeamMember(
+  id: number,
+  _prevState: FormActionState,
+  formData: FormData,
+): Promise<FormActionState> {
+  await requireAdmin();
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from("team_members")
+    .update(parseTeamMemberForm(formData))
+    .eq("id", id);
+  if (error) return { error: error.message };
+
+  revalidatePath("/dashboard/settings");
+  revalidatePath("/");
+  return { success: true };
+}
+
+export async function deleteTeamMember(id: number) {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("team_members").delete().eq("id", id);
+  if (error) return { error: error.message };
+
+  revalidatePath("/dashboard/settings");
+  revalidatePath("/");
+  return undefined;
+}
+
+export async function updateSiteBranding(
+  _prevState: FormActionState,
+  formData: FormData,
+): Promise<FormActionState> {
+  await requireAdmin();
+  const supabase = await createClient();
+
+  const logoUrl = (formData.get("logo_url") as string) || null;
+  const faviconUrl = (formData.get("favicon_url") as string) || null;
+
+  const { error } = await supabase
+    .from("site_settings")
+    .update({ logo_url: logoUrl, favicon_url: faviconUrl, updated_at: new Date().toISOString() })
+    .eq("id", true);
+  if (error) return { error: error.message };
+
+  revalidatePath("/dashboard/settings");
+  revalidatePath("/");
+  revalidatePath("/dashboard");
+  return { success: true };
+}

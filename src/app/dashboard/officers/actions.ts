@@ -20,6 +20,7 @@ function parseOfficerForm(formData: FormData): TablesInsert<"accountable_officer
     office_id: officeId ? Number(officeId) : null,
     contact_no: str("contact_no"),
     email: str("email"),
+    photo_url: str("photo_url"),
     status: (formData.get("status") as string) || "active",
   };
 }
@@ -29,11 +30,14 @@ export async function createOfficer(
   formData: FormData,
 ): Promise<FormActionState> {
   await requireUser();
-  const supabase = await createClient();
 
-  const { error } = await supabase
-    .from("accountable_officers")
-    .insert(parseOfficerForm(formData));
+  const parsed = parseOfficerForm(formData);
+  if (!parsed.photo_url) {
+    return { error: "A photo is required so the office can identify the custodian on sight." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("accountable_officers").insert(parsed);
 
   if (error) return { error: error.message };
 
@@ -47,11 +51,16 @@ export async function updateOfficer(
   formData: FormData,
 ): Promise<FormActionState> {
   await requireUser();
-  const supabase = await createClient();
 
+  const parsed = parseOfficerForm(formData);
+  if (!parsed.photo_url) {
+    return { error: "A photo is required so the office can identify the custodian on sight." };
+  }
+
+  const supabase = await createClient();
   const { error } = await supabase
     .from("accountable_officers")
-    .update(parseOfficerForm(formData))
+    .update(parsed)
     .eq("officer_id", officerId);
 
   if (error) return { error: error.message };

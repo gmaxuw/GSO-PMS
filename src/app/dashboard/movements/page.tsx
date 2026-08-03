@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FileText } from "lucide-react";
+import { FileText, QrCode } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -9,6 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import { MovementFormDialog } from "@/components/movement-form-dialog";
 import { createClient } from "@/lib/supabase/server";
@@ -91,6 +92,7 @@ export default async function MovementsPage() {
                   <TableHead>Officer</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Remarks</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -133,13 +135,22 @@ export default async function MovementsPage() {
                         <TableCell className="max-w-48 truncate text-muted-foreground">
                           {row.remarks ?? "—"}
                         </TableCell>
+                        <TableCell className="text-right">
+                          {row.status !== "returned" && (
+                            <Button asChild variant="ghost" size="sm" title="Print sticker now that custody is known">
+                              <Link href={`/dashboard/assets/${row.asset_id}/sticker`}>
+                                <QrCode className="h-4 w-4" /> Sticker
+                              </Link>
+                            </Button>
+                          )}
+                        </TableCell>
                       </TableRow>
                     );
                   })
                 ) : (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={8}
                       className="py-10 text-center text-sm text-muted-foreground"
                     >
                       No transactions recorded yet.

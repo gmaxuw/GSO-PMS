@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { createOfficer, updateOfficer } from "@/app/dashboard/officers/actions";
+import { ImageUploadField } from "@/components/image-upload-field";
 import type { Tables } from "@/lib/supabase/database.types";
 
 type Office = Tables<"offices">;
@@ -69,6 +70,15 @@ export function OfficerFormDialog({
         </DialogHeader>
 
         <form action={formAction} className="space-y-4">
+          <ImageUploadField
+            bucket="officer-photos"
+            pathPrefix="officers"
+            name="photo_url"
+            label="Photo"
+            currentUrl={officer?.photo_url}
+            required
+          />
+
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="first_name">First Name</Label>

@@ -14,20 +14,30 @@ import { CreateStaffDialog } from "@/components/create-staff-dialog";
 import { UserRowActions } from "@/components/user-row-actions";
 import { CategoryFormDialog } from "@/components/category-form-dialog";
 import { OfficeFormDialog } from "@/components/office-form-dialog";
+import { TeamMemberFormDialog } from "@/components/team-member-form-dialog";
+import { BrandingForm } from "@/components/branding-form";
+import { PhotoLightbox } from "@/components/photo-lightbox";
 import { requireAdmin } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
-import { deleteCategory, deleteOffice } from "./actions";
+import { deleteCategory, deleteOffice, deleteTeamMember } from "./actions";
 
 export default async function SettingsPage() {
   const profile = await requireAdmin();
   const supabase = await createClient();
 
-  const [{ data: users }, { data: categories }, { data: offices }] =
-    await Promise.all([
-      supabase.from("profiles").select("*").order("created_at"),
-      supabase.from("categories").select("*").order("category_name"),
-      supabase.from("offices").select("*").order("office_name"),
-    ]);
+  const [
+    { data: users },
+    { data: categories },
+    { data: offices },
+    { data: teamMembers },
+    { data: siteSettings },
+  ] = await Promise.all([
+    supabase.from("profiles").select("*").order("created_at"),
+    supabase.from("categories").select("*").order("category_name"),
+    supabase.from("offices").select("*").order("office_name"),
+    supabase.from("team_members").select("*").order("sort_order"),
+    supabase.from("site_settings").select("*").eq("id", true).maybeSingle(),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -43,6 +53,8 @@ export default async function SettingsPage() {
           <TabsTrigger value="users">Staff Accounts</TabsTrigger>
           <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="offices">Offices</TabsTrigger>
+          <TabsTrigger value="team">Homepage Team</TabsTrigger>
+          <TabsTrigger value="branding">Branding</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="space-y-4">
@@ -183,6 +195,71 @@ export default async function SettingsPage() {
                   )}
                 </TableBody>
               </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="team" className="space-y-4">
+          <div className="flex justify-end">
+            <TeamMemberFormDialog nextSortOrder={(teamMembers?.length ?? 0) + 1} />
+          </div>
+          <Card>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-14"></TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Year / Course</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Order</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {teamMembers && teamMembers.length > 0 ? (
+                    teamMembers.map((m) => (
+                      <TableRow key={m.id}>
+                        <TableCell>
+                          <PhotoLightbox url={m.photo_url} alt={m.name} shape="square" />
+                        </TableCell>
+                        <TableCell className="font-medium">{m.name}</TableCell>
+                        <TableCell>
+                          {m.year_level} &middot; {m.course}
+                        </TableCell>
+                        <TableCell>{m.email}</TableCell>
+                        <TableCell>{m.sort_order}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            <TeamMemberFormDialog
+                              member={m}
+                              nextSortOrder={m.sort_order}
+                            />
+                            <DeleteButton
+                              action={deleteTeamMember.bind(null, m.id)}
+                              confirmMessage={`Remove "${m.name}" from the homepage?`}
+                            />
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                        No team members yet.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="branding" className="space-y-4">
+          <Card>
+            <CardContent className="max-w-md">
+              <BrandingForm settings={siteSettings ?? null} />
             </CardContent>
           </Card>
         </TabsContent>
