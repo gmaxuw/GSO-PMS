@@ -6,7 +6,6 @@ import {
   AlertTriangle,
   ArrowLeftRight,
   BarChart3,
-  BookOpen,
   Boxes,
   Clock,
   FileText,
@@ -131,11 +130,6 @@ export function AppSidebar({
             label="System"
             items={[
               { href: "/dashboard/settings", label: "Settings", icon: Settings },
-              {
-                href: "/dashboard/documentation",
-                label: "Documentation",
-                icon: BookOpen,
-              },
             ]}
             pathname={pathname}
           />
