@@ -10,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { StatCard } from "@/components/stat-card";
 import { SendNotificationsButton } from "@/components/send-notifications-button";
 import { createClient } from "@/lib/supabase/server";
-import { formatDate, daysUntil } from "@/lib/format";
+import { formatDate, daysUntil, daysSince } from "@/lib/format";
 import { AlertTriangle, CheckCircle2, Clock, XCircle } from "lucide-react";
 
 export default async function ExpiryPage() {
@@ -29,7 +29,7 @@ export default async function ExpiryPage() {
       ? new Date(asset.expiration_date).getTime()
       : null;
     const totalDays = expires ? (expires - acquired) / 86_400_000 : null;
-    const elapsedDays = (Date.now() - acquired) / 86_400_000;
+    const elapsedDays = daysSince(asset.acquisition_date);
     const lifeConsumed =
       totalDays && totalDays > 0
         ? Math.min(100, Math.max(0, Math.round((elapsedDays / totalDays) * 100)))
@@ -54,7 +54,7 @@ export default async function ExpiryPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">
             Expiry & Lifecycle Tracker

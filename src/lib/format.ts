@@ -25,6 +25,10 @@ export function daysUntil(value: string | null): number | null {
   return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+export function daysSince(value: string): number {
+  return (Date.now() - new Date(value).getTime()) / 86_400_000;
+}
+
 export function isoDaysFromNow(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() + days);

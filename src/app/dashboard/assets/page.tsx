@@ -1,4 +1,5 @@
-import { Pencil } from "lucide-react";
+import Link from "next/link";
+import { Pencil, QrCode } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -51,7 +52,7 @@ export default async function AssetsPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">
             Property Asset Registry
@@ -60,7 +61,14 @@ export default async function AssetsPage({
             View, search, and manage all registered assets
           </p>
         </div>
-        <AssetFormDialog categories={categories ?? []} offices={offices ?? []} />
+        <div className="flex gap-2">
+          <Button asChild variant="outline">
+            <Link href="/dashboard/assets/scan">
+              <QrCode className="h-4 w-4" /> Scan to Verify
+            </Link>
+          </Button>
+          <AssetFormDialog categories={categories ?? []} offices={offices ?? []} />
+        </div>
       </div>
 
       <Card>
@@ -87,7 +95,12 @@ export default async function AssetsPage({
                   assets.map((asset) => (
                     <TableRow key={asset.asset_id}>
                       <TableCell className="font-medium">
-                        {asset.asset_code}
+                        <Link
+                          href={`/dashboard/assets/${asset.asset_id}`}
+                          className="hover:underline"
+                        >
+                          {asset.asset_code}
+                        </Link>
                       </TableCell>
                       <TableCell>{asset.asset_name}</TableCell>
                       <TableCell>{asset.categories?.category_name ?? "—"}</TableCell>
