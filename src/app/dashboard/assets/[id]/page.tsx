@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Printer } from "lucide-react";
 import { notFound } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -134,9 +134,14 @@ export default async function AssetDetailPage({
             </div>
             <p className="text-center text-xs text-muted-foreground">
               Encodes property code <strong>{asset.asset_code}</strong>. Print
-              and affix to the asset, then use Scan to Verify during physical
-              count.
+              a sticker sheet and affix one to the physical asset before
+              issuing it, then use Scan to Verify during physical count.
             </p>
+            <Button asChild className="w-full">
+              <Link href={`/dashboard/assets/${asset.asset_id}/sticker`}>
+                <Printer className="h-4 w-4" /> Print Sticker Sheet
+              </Link>
+            </Button>
           </CardContent>
         </Card>
       </div>

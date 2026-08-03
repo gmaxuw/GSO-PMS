@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { Printer } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -8,6 +10,7 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/format";
 
@@ -26,6 +29,7 @@ export default async function RecordsPage() {
   const combined = [
     ...(parRecords ?? []).map((r) => ({
       id: `par-${r.par_id}`,
+      printHref: `/dashboard/records/par/${r.par_id}`,
       docNo: r.par_no,
       docType: "PAR" as const,
       asset: r.assets,
@@ -35,6 +39,7 @@ export default async function RecordsPage() {
     })),
     ...(icsRecords ?? []).map((r) => ({
       id: `ics-${r.ics_id}`,
+      printHref: `/dashboard/records/ics/${r.ics_id}`,
       docNo: r.ics_no,
       docType: "ICS" as const,
       asset: r.assets,
@@ -65,6 +70,7 @@ export default async function RecordsPage() {
                 <TableHead>Custodian</TableHead>
                 <TableHead>Issue Date</TableHead>
                 <TableHead>Remarks</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -90,12 +96,19 @@ export default async function RecordsPage() {
                     <TableCell className="max-w-64 truncate text-muted-foreground">
                       {doc.remarks ?? "—"}
                     </TableCell>
+                    <TableCell className="text-right">
+                      <Button asChild variant="ghost" size="sm">
+                        <Link href={doc.printHref}>
+                          <Printer className="h-4 w-4" /> Print
+                        </Link>
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
                   <TableCell
-                    colSpan={6}
+                    colSpan={7}
                     className="py-10 text-center text-sm text-muted-foreground"
                   >
                     No PAR or ICS documents generated yet. These are created

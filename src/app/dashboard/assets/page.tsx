@@ -113,6 +113,11 @@ export default async function AssetsPage({
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
+                          <Button asChild variant="ghost" size="icon-sm" title="Print sticker">
+                            <Link href={`/dashboard/assets/${asset.asset_id}/sticker`}>
+                              <QrCode className="h-4 w-4" />
+                            </Link>
+                          </Button>
                           <AssetFormDialog
                             categories={categories ?? []}
                             offices={offices ?? []}
