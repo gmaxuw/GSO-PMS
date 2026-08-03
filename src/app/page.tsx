@@ -50,27 +50,31 @@ export default async function HomePage() {
           </div>
         </section>
 
-        <section className="relative overflow-hidden bg-slate-950 py-20">
+        <section className="relative overflow-hidden bg-gradient-to-b from-slate-50 via-white to-white py-20">
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,rgba(56,189,248,0.12),transparent)]"
+            className="pointer-events-none absolute -top-24 left-1/4 h-72 w-72 rounded-full bg-sky-200/40 blur-3xl"
+          />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute top-36 right-1/4 h-72 w-72 rounded-full bg-blue-100/50 blur-3xl"
           />
           <div className="relative mx-auto max-w-6xl px-6">
             <div className="mx-auto max-w-2xl text-center">
-              <p className="text-xs font-semibold tracking-[0.2em] text-sky-400 uppercase">
+              <p className="text-xs font-semibold tracking-[0.2em] text-sky-600 uppercase">
                 The Roster
               </p>
-              <h2 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">
+              <h2 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">
                 Meet the Developers
               </h2>
-              <p className="mt-3 text-slate-400">
+              <p className="mt-3 text-muted-foreground">
                 BS Information Technology capstone project &middot; University
                 of Science and Technology of Southern Philippines, Villanueva
                 Campus
               </p>
             </div>
 
-            <div className="mt-16 grid grid-cols-1 gap-x-6 gap-y-14 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
               {teamMembers?.map((member) => (
                 <TeamMemberCard key={member.id} member={member} />
               ))}

@@ -14,6 +14,7 @@ const sections = [
   { id: "features", label: "6. Core Features" },
   { id: "faq", label: "7. Panel Q&A" },
   { id: "limits", label: "8. Limitations" },
+  { id: "reviewer", label: "9. Reviewer Cheat Sheet" },
 ];
 
 const stackItems: [string, string][] = [
@@ -92,6 +93,16 @@ const limitations = [
   "Single-tenant branding — “Municipality of Villanueva” is written directly into print templates, not a setting.",
   "No login rate limiting beyond Supabase Auth's own defaults.",
   "next-themes is present but inert — wired into the toast component from the shadcn scaffold, but there's no user-facing theme toggle.",
+];
+
+const reviewerQAs: { q: string; a: string }[] = [
+  { q: "Is it fair to call Vercel and Supabase “hosting” too?", a: "Yes — both are hosting, they just host two different halves of the system. Vercel hosts and runs the actual application: it takes the code, builds it, and serves the pages when someone visits the URL. Supabase hosts the data side: the database, the login system, and the uploaded photos. Simple way to say it: Vercel is the storefront that's always open; Supabase is the warehouse and records room behind it that the storefront calls into whenever it needs information." },
+  { q: "So is it “one hosts frontend, one hosts backend”?", a: "Close, but worth tightening — a panel likes to poke at exactly this. Vercel doesn't only host what the browser shows, it also runs the server-side part of the app (fetching data, handling form submissions) before the page ever reaches the browser. So Vercel hosts and runs the whole application, front and back. Supabase isn't “the backend” in the sense of running code at all — it's the data layer the app calls out to. Cleaner phrasing: Vercel runs the app. Supabase remembers everything the app needs to remember." },
+  { q: "Is JavaScript the same thing as TypeScript?", a: "Not exactly — TypeScript is a superset of JavaScript. Every valid JavaScript file is already valid TypeScript; TypeScript just lets you add optional type annotations on top (“this must always be a string”), and a compiler checks that promise before the code runs. Once checked, TypeScript is compiled straight into plain JavaScript — the browser never actually sees TypeScript, only JavaScript. So: this project is written in TypeScript, but it ships as, and runs as, JavaScript." },
+  { q: "What does “compile” or “build” actually mean here?", a: "It means turning the TypeScript/React source code into the plain HTML, CSS, and JavaScript a browser can run — checking types, bundling files together, and optimizing them along the way. That's the next build step, the exact one Vercel runs automatically on every push." },
+  { q: "If Supabase holds the data, is Supabase “the website”?", a: "No — Supabase has no idea what the website looks like. It only stores data and answers requests for it. Its own dashboard shows tables and rows, not the property registry screen. The actual website — pages, layout, forms — is entirely defined by the Next.js code hosted on Vercel. Supabase is a service the website talks to, not the website itself." },
+  { q: "If PHP works, why isn't it used here?", a: "PHP genuinely works — WordPress runs on it. It's not that PHP can't do this job, it's that plain PHP means hand-building everything Next.js and Supabase already hand us for free: reusable interactive components, type-checking that catches mistakes before code runs, permission rules enforced at the database itself instead of just the page, and a deploy pipeline triggered automatically by a git push. A modern PHP framework like Laravel gets closer, but that's rebuilding the same toolkit under a different name, still on older single-server hosting instead of this project's push-to-deploy pipeline." },
+  { q: "Is this project mobile-friendly?", a: "Reasonably, yes, though it isn't mobile-first. Tailwind's responsive classes run throughout: the homepage's team grid reflows from four columns down to one on a phone, the sidebar collapses into a slide-out drawer on small screens (that's what useIsMobile() in use-mobile.ts is for), and dialogs resize to fit. What isn't fully optimized: the data tables (Asset Registry, Officers, Movement & Issuance, Records) scroll sideways on a phone instead of restacking as cards — a normal, honest trade-off for a back-office tool GSO staff mostly use at a desk, and a contained next step rather than a rebuild if this engagement continues." },
 ];
 
 export default async function PublicDocumentationPage() {
@@ -432,6 +443,101 @@ is_admin()        -- true if additionally role = 'admin'`}
             trade-offs appropriate for a capstone-scoped system, each with a
             clear path forward if the project continues past thesis defense.
           </p>
+        </section>
+
+        <Separator />
+
+        <section id="reviewer" className="scroll-mt-16 space-y-4">
+          <h2 className="text-xl font-bold tracking-tight">9. Reviewer Cheat Sheet</h2>
+          <p className="text-sm text-muted-foreground">
+            The concepts that come up most in conversation, explained the way
+            you&apos;d actually say them out loud &mdash; not reworded code
+            comments. Read this section once before a defense-prep session so
+            it flows without needing to look anything up mid-explanation.
+          </p>
+
+          <Card className="border-sky-200 bg-sky-50/50">
+            <CardHeader>
+              <CardTitle className="text-base">
+                The example that proves it: HTML input &rarr; TypeScript &rarr; Supabase &rarr; HTML output
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm leading-relaxed text-muted-foreground">
+              <p>
+                <strong className="text-foreground">Step 1 &mdash; the HTML.</strong>{" "}
+                The sign-in screen has this literal tag in{" "}
+                <code className="rounded bg-muted px-1">src/app/login/page.tsx</code>:
+              </p>
+              <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs">
+{`<input id="email" name="email" type="email" required />`}
+              </pre>
+              <p>
+                That&apos;s pure HTML. It has no idea what a database is &mdash;
+                it just sits there and waits for someone to type.
+              </p>
+
+              <p>
+                <strong className="text-foreground">Step 2 &mdash; the TypeScript.</strong>{" "}
+                When the form is submitted,{" "}
+                <code className="rounded bg-muted px-1">src/app/login/actions.ts</code>{" "}
+                runs:
+              </p>
+              <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs">
+{`const email = formData.get("email") as string;
+const password = formData.get("password") as string;
+const { error } = await supabase.auth.signInWithPassword({ email, password });`}
+              </pre>
+              <p>
+                This is the actual &ldquo;fetch&rdquo; &mdash; TypeScript
+                reading what was typed into that HTML input, then making a
+                real network call to Supabase.
+              </p>
+
+              <p>
+                <strong className="text-foreground">Step 3 &mdash; back to HTML, the other direction.</strong>{" "}
+                On the Asset Registry,{" "}
+                <code className="rounded bg-muted px-1">src/app/dashboard/assets/page.tsx</code>{" "}
+                runs:
+              </p>
+              <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs">
+{`const { data: assets } = await supabase.from("assets").select("*, categories(category_name)...");`}
+              </pre>
+              <p>and then, further down the same file:</p>
+              <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs">
+{`<TableCell>{asset.asset_name}</TableCell>`}
+              </pre>
+              <p>
+                That second line <em>looks</em> like it&apos;s just sitting on
+                the page as HTML. It isn&apos;t.{" "}
+                <code className="rounded bg-muted px-1">asset.asset_name</code>{" "}
+                is a live value that came out of the Supabase query a few
+                lines above &mdash; every time that page loads, TypeScript
+                asks the database fresh, and only then builds that{" "}
+                <code className="rounded bg-muted px-1">&lt;td&gt;</code> tag
+                with whatever the database currently says. Rename that asset
+                in the database right now, and the very next page load shows
+                the new name &mdash; nobody edited an HTML file.{" "}
+                <strong className="text-foreground">
+                  The HTML on that screen was never typed by a person;
+                  TypeScript generated it, live, from Supabase, the moment the
+                  page was requested.
+                </strong>
+              </p>
+            </CardContent>
+          </Card>
+
+          <div className="space-y-3">
+            {reviewerQAs.map((item) => (
+              <Card key={item.q}>
+                <CardHeader>
+                  <CardTitle className="text-base">{item.q}</CardTitle>
+                </CardHeader>
+                <CardContent className="text-sm leading-relaxed text-muted-foreground">
+                  {item.a}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </section>
       </main>
     </div>
