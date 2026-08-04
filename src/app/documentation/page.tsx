@@ -253,7 +253,7 @@ const limitations = [
 const reviewerQAs: { q: string; a: string }[] = [
   { q: "Is it fair to call Vercel and Supabase “hosting” too?", a: "Yes — both are hosting, they just host two different halves of the system. Vercel hosts and runs the actual application: it takes the code, builds it, and serves the pages when someone visits the URL. Supabase hosts the data side: the database, the login system, and the uploaded photos. Simple way to say it: Vercel is the storefront that's always open; Supabase is the warehouse and records room behind it that the storefront calls into whenever it needs information." },
   { q: "So is it “one hosts frontend, one hosts backend”?", a: "Close, but worth tightening — a panel likes to poke at exactly this. Vercel doesn't only host what the browser shows, it also runs the server-side part of the app (fetching data, handling form submissions) before the page ever reaches the browser. So Vercel hosts and runs the whole application, front and back. Supabase isn't “the backend” in the sense of running code at all — it's the data layer the app calls out to. Cleaner phrasing: Vercel runs the app. Supabase remembers everything the app needs to remember." },
-  { q: "Is JavaScript the same thing as TypeScript?", a: "Not exactly — TypeScript is a superset of JavaScript. Every valid JavaScript file is already valid TypeScript; TypeScript just lets you add optional type annotations on top (“this must always be a string”), and a compiler checks that promise before the code runs. Once checked, TypeScript is compiled straight into plain JavaScript — the browser never actually sees TypeScript, only JavaScript. So: this project is written in TypeScript, but it ships as, and runs as, JavaScript." },
+  { q: "Is JavaScript the same thing as TypeScript?", a: "No — Section 1 above breaks this down properly (Java vs. JavaScript vs. TypeScript, one at a time), since it's really three concepts people mash into a single question. Short version: TypeScript is JavaScript with type-checking added on top, and it compiles down to plain JavaScript before it ever reaches a browser — so this project is written in TypeScript but runs as JavaScript." },
   { q: "What does “compile” or “build” actually mean here?", a: "It means turning the TypeScript/React source code into the plain HTML, CSS, and JavaScript a browser can run — checking types, bundling files together, and optimizing them along the way. That's the next build step, the exact one Vercel runs automatically on every push." },
   { q: "If Supabase holds the data, is Supabase “the website”?", a: "No — Supabase has no idea what the website looks like. It only stores data and answers requests for it. Its own dashboard shows tables and rows, not the property registry screen. The actual website — pages, layout, forms — is entirely defined by the Next.js code hosted on Vercel. Supabase is a service the website talks to, not the website itself." },
   { q: "If PHP works, why isn't it used here?", a: "PHP genuinely works — WordPress runs on it. It's not that PHP can't do this job, it's that plain PHP means hand-building everything Next.js and Supabase already hand us for free: reusable interactive components, type-checking that catches mistakes before code runs, permission rules enforced at the database itself instead of just the page, and a deploy pipeline triggered automatically by a git push. A modern PHP framework like Laravel gets closer, but that's rebuilding the same toolkit under a different name, still on older single-server hosting instead of this project's push-to-deploy pipeline." },
@@ -407,15 +407,54 @@ export default async function PublicDocumentationPage() {
         <section id="stack" className="scroll-mt-16 space-y-4">
           <h2 className="text-xl font-bold tracking-tight">1. Tech Stack, Named and Justified</h2>
           <Card>
-            <CardContent className="space-y-3 pt-6 text-sm leading-relaxed text-muted-foreground">
+            <CardContent className="space-y-4 pt-6 text-sm leading-relaxed text-muted-foreground">
               <p>
                 <strong className="text-foreground">Is Java used anywhere? No.</strong>{" "}
-                JavaScript and Java are unrelated languages that share part of a
-                name from 1995 marketing. JavaScript (written here as
-                TypeScript, its typed superset) is the only language a browser
-                runs natively. Java is a separately-compiled language for a
-                different job entirely &mdash; there is no Java file, JVM, or
-                Android component anywhere in this project.
+                But that question actually bundles three different things
+                together, and it&apos;s worth pulling them apart before
+                answering it:
+              </p>
+              <div className="divide-y divide-border rounded-lg border border-border/60">
+                <div className="grid grid-cols-1 gap-1 p-3 sm:grid-cols-[150px_1fr] sm:gap-4">
+                  <p className="text-sm font-bold text-foreground">Java</p>
+                  <p className="text-sm text-muted-foreground">
+                    A general-purpose programming language used for things
+                    like Android apps, enterprise backend systems, and
+                    desktop software.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-1 p-3 sm:grid-cols-[150px_1fr] sm:gap-4">
+                  <p className="text-sm font-bold text-foreground">JavaScript</p>
+                  <p className="text-sm text-muted-foreground">
+                    The only programming language a web browser can run
+                    directly &mdash; it&apos;s what makes a webpage
+                    interactive.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-1 p-3 sm:grid-cols-[150px_1fr] sm:gap-4">
+                  <p className="text-sm font-bold text-foreground">TypeScript</p>
+                  <p className="text-sm text-muted-foreground">
+                    JavaScript with an extra layer added on top that checks
+                    the code for mistakes before it ever runs.
+                  </p>
+                </div>
+              </div>
+              <p>
+                Here&apos;s the clean way I&apos;d actually say it out loud:
+                this project is written in TypeScript, but it runs as
+                JavaScript. TypeScript is just JavaScript with type-checking
+                added on top &mdash; think of it as JavaScript with a
+                spellchecker built in, catching mistakes while I&apos;m
+                writing instead of after a user hits an error. Once the
+                project is built, that type-checking layer disappears, and
+                what&apos;s left is ordinary JavaScript &mdash; the same
+                language every browser runs. Java, on the other hand, has
+                nothing to do with any of this &mdash; it&apos;s a completely
+                different language for a completely different kind of job,
+                and the two only share part of a name because of a 1995
+                marketing decision, nothing technical. There&apos;s no Java
+                file, no JVM, and no Android component anywhere in this
+                project.
               </p>
             </CardContent>
           </Card>

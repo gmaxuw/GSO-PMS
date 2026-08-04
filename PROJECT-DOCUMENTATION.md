@@ -19,7 +19,13 @@ Here is every language, framework, and library actually used in this project, by
 - **CSS** — styling, almost entirely written as Tailwind utility classes (see below), with a small amount of hand-written CSS in `src/app/globals.css` for theme variables and print rules.
 - **HTML** — never hand-written as `.html` files. Every screen is written as JSX/TSX (HTML-like syntax embedded directly in TypeScript), which React and Next.js compile into real HTML sent to the browser.
 
-**Is Java used anywhere? No.** This is worth being direct about, because panels sometimes conflate the two: **JavaScript and Java are unrelated languages that happen to share part of a name for marketing reasons dating back to 1995.** JavaScript is a lightweight scripting language interpreted directly by web browsers (and, on the server, by a JavaScript runtime called Node.js) — it's the only language that runs natively in a browser tab. Java is a completely different, separately-compiled language that runs on its own virtual machine (the JVM), historically used for enterprise backends, desktop software, and Android apps. There is no Java, no `.java` file, no JVM, and no Android component anywhere in this project. If asked "where's the Java?", the honest answer is: there isn't any, because this is a web application, and JavaScript (via its typed superset, TypeScript) is what web applications run on — Java was never the right tool for this job.
+**Is Java used anywhere? No.** But that question actually bundles three different things together, and it's worth pulling them apart before answering it:
+
+- **Java** — a general-purpose programming language used for things like Android apps, enterprise backend systems, and desktop software.
+- **JavaScript** — the only programming language a web browser can run directly — it's what makes a webpage interactive.
+- **TypeScript** — JavaScript with an extra layer added on top that checks the code for mistakes before it ever runs.
+
+Here's the clean way I'd actually say it out loud: this project is written in TypeScript, but it runs as JavaScript. TypeScript is just JavaScript with type-checking added on top — think of it as JavaScript with a spellchecker built in, catching mistakes while I'm writing instead of after a user hits an error. Once the project is built, that type-checking layer disappears, and what's left is ordinary JavaScript — the same language every browser runs. Java, on the other hand, has nothing to do with any of this — it's a completely different language for a completely different kind of job, and the two only share part of a name because of a 1995 marketing decision, nothing technical. There's no Java file, no JVM, and no Android component anywhere in this project.
 
 **Framework**
 
@@ -779,7 +785,7 @@ Yes — both are hosting, they just host two different halves of the system. Ver
 Close, but worth tightening — a panel likes to poke at exactly this. Vercel doesn't only host what the browser shows, it also runs the server-side part of the app (fetching data, handling form submissions) before the page ever reaches the browser. So Vercel hosts and runs the whole application, front and back. Supabase isn't "the backend" in the sense of running code at all — it's the data layer the app calls out to. Cleaner phrasing: Vercel runs the app. Supabase remembers everything the app needs to remember.
 
 **Is JavaScript the same thing as TypeScript?**
-Not exactly — TypeScript is a superset of JavaScript. Every valid JavaScript file is already valid TypeScript; TypeScript just lets you add optional type annotations on top ("this must always be a string"), and a compiler checks that promise before the code runs. Once checked, TypeScript is compiled straight into plain JavaScript — the browser never actually sees TypeScript, only JavaScript. So: this project is written in TypeScript, but it ships as, and runs as, JavaScript.
+No — Section 1 above breaks this down properly (Java vs. JavaScript vs. TypeScript, one at a time), since it's really three concepts people mash into a single question. Short version: TypeScript is JavaScript with type-checking added on top, and it compiles down to plain JavaScript before it ever reaches a browser — so this project is written in TypeScript but runs as JavaScript.
 
 **What does "compile" or "build" actually mean here?**
 It means turning the TypeScript/React source code into the plain HTML, CSS, and JavaScript a browser can run — checking types, bundling files together, and optimizing them along the way. That's the `next build` step, the exact one Vercel runs automatically on every push.
