@@ -379,6 +379,11 @@ The concepts that come up most in conversation, explained the way I'd actually s
 
 That's pure HTML. It has no idea what a database is — it just sits there and waits for someone to type.
 
+- **`id="email"`** — connects this input to its `<Label htmlFor="email">` above it, so clicking the label focuses the box. This is not what the server reads.
+- **`name="email"`** — this is what the server actually reads. When the form submits, `formData.get("email")` matches this `name`, not the `id`.
+- **`type="email"`** — tells the browser to show an email-style keyboard on mobile and do basic "does this look like an email" checking before it even submits.
+- **`required`** — tells the browser to block the form from submitting at all if this field is empty, before any of my own code even runs.
+
 **Step 2 — the TypeScript.** When the form is submitted, `src/app/login/actions.ts` runs:
 
 ```ts
@@ -389,11 +394,26 @@ const { error } = await supabase.auth.signInWithPassword({ email, password });
 
 This is the actual "fetch" — TypeScript reading what was typed into that HTML input, then making a real network call to Supabase.
 
+In plain terms: when someone submits the sign-in form, this function runs on the server. I pull the email and password straight out of the submitted form data, then hand both off to Supabase's own sign-in method — I'm not writing any password-checking logic myself, Supabase handles that securely on its end. That's a real network call, so I use `await` to pause the code until Supabase actually responds. What comes back includes an `error` field, and that's the only piece I grab, because that's what tells me whether the login worked or not.
+
+- **`const`** — not `let`, because `email` is set once from the form data and never reassigned anywhere in this function. If a value won't change after I set it, `const` is the safer default — TypeScript actually stops the build if I try to reassign it later by mistake.
+- **`formData.get("email")`** — `formData` is the raw data the browser packaged up from the form. `.get("email")` pulls the value out of whichever input has `name="email"` — not `id`, `name`. That's how the browser and my code agree on which field is which.
+- **`as string`** — this is TypeScript only, not plain JavaScript. `formData.get()` is typed to return more than one possible kind of value (it could technically be a string, a `File`, or `null`), so `as string` is me telling the compiler to trust that in this specific case it's a string. It changes nothing at runtime — it only changes what TypeScript lets me do with the value afterward.
+- **`await`** — `signInWithPassword` doesn't answer instantly — it's a real request going out over the network to Supabase's servers. `await` pauses this function right there until that response actually arrives, instead of racing ahead to the next line with no answer yet.
+- **`const { error } = ...`** — this is destructuring. `signInWithPassword` actually returns an object with more than one property on it (`data` and `error`), and instead of grabbing the whole object and writing `result.error` every time, `{ error }` reaches in and pulls out just that one property into its own variable directly. I only need `error` here — if it comes back `null`, the sign-in worked.
+
 **Step 3 — back to HTML, the other direction.** On the Asset Registry, `src/app/dashboard/assets/page.tsx` runs:
 
 ```ts
 const { data: assets } = await supabase.from("assets").select("*, categories(category_name)...");
 ```
+
+In plain terms: here I'm asking Supabase for every row in the `assets` table, and for each one, also pulling in its related category's name — one request instead of two separate queries. Since it's a network call, I wait for it with `await`, and I grab just the data part of the response, naming it `assets` so the rest of the page can use it directly.
+
+- **`supabase.from("assets")`** — points the query at the `assets` table specifically.
+- **`.select("*, categories(category_name)...")`** — the `*` means "give me every column on the asset itself." `categories(category_name)` rides along on that same request and pulls in the related category's name through the foreign key, so I don't need a second, separate query just to show a category name next to each asset.
+- **`await`** — same reason as the login example — this is a real network call, so the function pauses here until Supabase actually answers.
+- **`const { data: assets } = ...`** — destructuring again, but this time with a rename. Supabase always hands back an object shaped like `{ data, error }`. `{ data: assets }` reaches in, grabs the `data` property, and immediately renames it to `assets` for the rest of the file — shorter than writing `result.data` everywhere, and `assets` reads clearer than `data` on a page with more than one query.
 
 and then, further down the same file:
 
@@ -402,6 +422,10 @@ and then, further down the same file:
 ```
 
 That second line *looks* like it's just sitting on the page as HTML. It isn't. `asset.asset_name` is a live value that came out of the Supabase query a few lines above — every time that page loads, TypeScript asks the database fresh, and only then builds that `<td>` tag with whatever the database currently says. Rename that asset in the database right now, and the very next page load shows the new name — nobody edited an HTML file. **The HTML on that screen was never typed by a person; TypeScript generated it, live, from Supabase, the moment the page was requested.**
+
+- **`<TableCell>`** — one of this project's table components — visually it's just a table cell, a `<td>`, in the end.
+- **`{ }`** — curly braces inside JSX mean "stop treating this as plain text, run this as real TypeScript and print whatever it returns." Anything outside curly braces in JSX is static text; anything inside is a live value.
+- **`asset.asset_name`** — plain dot notation — reading the `asset_name` property off whichever `asset` object is currently being rendered, one per row of the table.
 
 ### Quick-fire Q&A
 
