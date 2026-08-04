@@ -181,6 +181,46 @@ The overall pattern is: **Server Components fetch data directly from the databas
 7. The Server Action re-validates permissions (`requireUser()` or `requireAdmin()` again — never trusting that the UI already checked), writes to Supabase, then calls `revalidatePath()` to tell Next.js "the data behind this URL is now stale."
 8. Next.js discards its cached render for that path; the next time it's viewed, step 3 runs again with fresh data.
 
+**What steps 2 and 3 actually look like in code**
+
+Every protected page starts with one of these two, from `src/lib/supabase/auth.ts`. In plain terms: `requireUser()` checks there's a logged-in profile and that it hasn't been deactivated — if either check fails, it redirects to the login page before rendering anything. `requireAdmin()` reuses that same check and adds one more on top: if the profile's role isn't admin, it sends them back to the regular dashboard instead. I call whichever one a page actually needs at the very top of the file, before any data gets fetched.
+
+```ts
+export async function requireUser() {
+  const profile = await getCurrentProfile();
+  if (!profile || profile.status !== "active") {
+    redirect("/login");
+  }
+  return profile;
+}
+
+export async function requireAdmin() {
+  const profile = await requireUser();
+  if (profile.role !== "admin") {
+    redirect("/dashboard");
+  }
+  return profile;
+}
+```
+
+- **`async function requireUser()`** — marked `async` because it calls `getCurrentProfile()` inside, which is itself a database lookup and needs `await`.
+- **`if (!profile || profile.status !== "active")`** — the `||` means either condition alone is enough to fail the check: no profile at all, or a profile that exists but has been deactivated. `!==` reads as "not equal to."
+- **`redirect("/login")`** — a Next.js function that immediately stops the rest of this function from running and sends the browser to a different page. Nothing after this line executes once it's called.
+- **`requireAdmin()` calling `await requireUser()`** — reuses the exact same check instead of duplicating it, then only adds the extra role check on top.
+
+And this is the real query behind the Property Asset Registry — not a simplified stand-in — from `src/app/dashboard/assets/page.tsx`. In plain terms: same `*` and nested-relation trick as before, plus two more pieces: `offices:assigned_office_id(office_name)` renames that joined relation to `offices` so the rest of the code can just write `asset.offices.office_name`, and `.order()` sorts newest assets first before anything is even rendered.
+
+```ts
+let query = supabase
+  .from("assets")
+  .select("*, categories(category_name), offices:assigned_office_id(office_name)")
+  .order("created_at", { ascending: false });
+```
+
+- **`let query = ...`** — `let`, not `const`, on purpose this time — a few lines below this (not shown here), the code conditionally adds more filters onto `query` depending on which filters the user picked, so it genuinely does get reassigned.
+- **`offices:assigned_office_id(office_name)`** — the part before the colon (`offices`) is a rename, same idea as `data: assets` from the login example — Supabase would otherwise name this joined relation something less friendly, based on the foreign key column.
+- **`.order("created_at", { ascending: false })`** — sorts by the `created_at` column, `ascending: false` meaning newest first.
+
 **Concrete example: adding a new asset**
 
 `AssetFormDialog` (`src/components/asset-form-dialog.tsx`) is a Client Component holding the "Add Asset" dialog. Submitting it calls `createAsset` (`src/app/dashboard/assets/actions.ts`), which:
@@ -197,6 +237,92 @@ This is the flow the original thesis screens didn't fully cover on their own, an
 2. Updates the asset's own `assigned_office_id` so its current custody stays in sync.
 3. If the transaction type is "Issued" or "Transferred" *and* an officer was selected, it auto-generates the linked document: an insert into either `par_records` or `ics_records`, with an auto-numbered doc number like `PAR-2026-0007` (`PAR-${year}-${assignment_id padded to 4 digits}`), and a foreign key (`assignment_id`) tying that receipt back to the exact transaction that created it.
 4. That receipt is immediately viewable and printable at `/dashboard/records/par/[id]` — a plain server-rendered page (`src/app/dashboard/records/par/[id]/page.tsx`) styled to look like an official PAR form, with a `PrintButton` that just calls `window.print()`.
+
+**The actual `createMovement` code**, from `src/app/dashboard/movements/actions.ts`:
+
+```ts
+export async function createMovement(
+  _prevState: FormActionState,
+  formData: FormData,
+): Promise<FormActionState> {
+  await requireUser();
+  const supabase = await createClient();
+
+  const assetId = Number(formData.get("asset_id"));
+  const officerId = formData.get("officer_id")
+    ? Number(formData.get("officer_id"))
+    : null;
+  const officeId = formData.get("office_id")
+    ? Number(formData.get("office_id"))
+    : null;
+  const status = formData.get("status") as "issued" | "returned" | "transferred";
+  const assignedDate = formData.get("assigned_date") as string;
+  const remarks = (formData.get("remarks") as string) || null;
+  const docType = formData.get("doc_type") as "par" | "ics" | "";
+
+  const { data: assignment, error } = await supabase
+    .from("asset_assignments")
+    .insert({
+      asset_id: assetId,
+      officer_id: officerId,
+      office_id: officeId,
+      status,
+      assigned_date: assignedDate,
+      returned_date: status === "returned" ? assignedDate : null,
+      remarks,
+    })
+    .select("assignment_id")
+    .single();
+
+  if (error || !assignment) {
+    return { error: error?.message ?? "Failed to record transaction." };
+  }
+
+  // Keep the asset's current custody in sync with the latest movement.
+  await supabase
+    .from("assets")
+    .update({ assigned_office_id: status === "returned" ? null : officeId })
+    .eq("asset_id", assetId);
+
+  if ((status === "issued" || status === "transferred") && docType && officerId) {
+    const year = new Date(assignedDate).getFullYear();
+    if (docType === "par") {
+      await supabase.from("par_records").insert({
+        par_no: `PAR-${year}-${String(assignment.assignment_id).padStart(4, "0")}`,
+        asset_id: assetId,
+        officer_id: officerId,
+        assignment_id: assignment.assignment_id,
+        issue_date: assignedDate,
+        remarks,
+      });
+    } else {
+      await supabase.from("ics_records").insert({
+        ics_no: `ICS-${year}-${String(assignment.assignment_id).padStart(4, "0")}`,
+        asset_id: assetId,
+        officer_id: officerId,
+        assignment_id: assignment.assignment_id,
+        issue_date: assignedDate,
+        remarks,
+      });
+    }
+  }
+
+  revalidatePath("/dashboard/movements");
+  revalidatePath("/dashboard/assets");
+  revalidatePath("/dashboard/records");
+  revalidatePath("/dashboard");
+  return { success: true };
+}
+```
+
+In plain terms: this runs every time someone records an issuance, return, or transfer. I insert the new `asset_assignments` row first, then immediately update the asset's own current custody so the registry always reflects the latest movement. If it was an issuance or transfer to a named officer, I auto-generate the matching PAR or ICS receipt with a document number built from the year and the assignment's own ID — so the numbering is automatic and can never collide. At the end I tell Next.js which pages just went stale, so they reload with fresh data the next time anyone views them.
+
+- **`_prevState`** — the leading underscore is a naming convention meaning "this parameter is required by `useActionState`'s function signature, but I don't actually use it in this function."
+- **`formData.get("officer_id") ? Number(...) : null`** — a ternary: "if this value exists, convert it to a number; otherwise use `null`." Shorter than a full if/else for a one-line decision.
+- **`status === "returned" ? assignedDate : null`** — same ternary pattern, deciding what to store in `returned_date` based on the transaction type.
+- **`` `PAR-${year}-${String(assignment.assignment_id).padStart(4, "0")}` ``** — a template literal — backticks let me drop live values directly into a string with `${ }` instead of gluing pieces together with `+`. `.padStart(4, "0")` pads the number with leading zeros until it's 4 digits long, so `7` becomes `"0007"`.
+- **`error?.message ?? "Failed to record transaction."`** — two things stacked. `error?.message` is optional chaining: if `error` happens to be `null` or `undefined`, the whole expression short-circuits instead of crashing on `.message`. `??` is nullish coalescing: if what's on the left is `null` or `undefined`, use the fallback text on the right.
+- **`(status === "issued" || status === "transferred") && docType && officerId`** — reads left to right: only proceed past this line if the status is one of those two, AND a document type was picked, AND an officer is actually attached to this transaction.
 
 **Concrete example: uploading a photo**
 
@@ -248,7 +374,15 @@ create function is_admin() returns boolean
 $$;
 ```
 
-In plain terms: `is_active_user()` is true for anyone logged in whose account hasn't been deactivated; `is_admin()` additionally requires `role = 'admin'`. Almost every table in the system follows the same pattern using these two functions:
+In plain terms: these are the two functions every RLS policy in this database is built on. Both do the same basic thing — look up the currently logged-in user's own row in `profiles` and check something about it. `is_active_user()` just checks `status = 'active'`. `is_admin()` checks that plus `role = 'admin'`. Postgres runs one of these, silently, on every single query the app makes to a protected table.
+
+- **`returns boolean`** — this function always answers true or false, nothing else.
+- **`security definer`** — normally a database function runs with the permissions of whoever's calling it. `security definer` means it instead runs with the permissions of whoever created it — necessary here because it needs to read the `profiles` table, and I don't want to separately grant every user direct read access to that table just so this check can work.
+- **`auth.uid()`** — a built-in Supabase function returning the ID of whoever is currently authenticated, based on their session — how the database knows who's asking without the application having to pass that in manually.
+- **`exists (select 1 from ...)`** — a standard SQL pattern for "does at least one matching row exist," without caring what's in it — `select 1` is a placeholder, not a real column, since `exists` only checks whether the subquery returns anything at all.
+- **`where id = (select auth.uid()) and status = 'active'`** — both conditions have to be true for a row to count: the profile's own id has to match the logged-in user, and their status has to be active.
+
+`is_active_user()` is true for anyone logged in whose account hasn't been deactivated; `is_admin()` additionally requires `role = 'admin'`. Almost every table in the system follows the same pattern using these two functions:
 
 - **Everyday operational tables** (`assets`, `accountable_officers`, `asset_assignments`, `alerts`, `maintenance`, `par_records`, `ics_records`, `disposal`): any active user (Staff or Admin) can `SELECT`/`INSERT`/`UPDATE`, e.g. policy `"active users read assets"` (`SELECT`, condition `is_active_user()`) and `"active users write assets"` (`INSERT`, condition `is_active_user()`). Only an Admin can `DELETE` — e.g. `"admin delete assets"` (`DELETE`, condition `is_admin()`). This matches the thesis's own role split: Staff/Property Custodians handle day-to-day recording, but only Administrators can permanently remove a record.
 - **Reference tables** (`categories`, `offices`): any active user can read them (needed for dropdowns throughout the app), but only an Admin can create, edit, or delete them — e.g. `"admin write categories"` (`INSERT`, condition `is_admin()`).
@@ -267,6 +401,13 @@ In plain terms: `is_active_user()` is true for anyone logged in whose account ha
   $$;
   ```
 
+  In plain terms: this fires automatically the instant a new row shows up in Supabase's own `auth.users` table — meaning the instant someone new signs up or gets created by `createStaffAccount`. It's the only thing that's ever allowed to insert into `profiles`, and it fills in the name and role from whatever metadata was passed in at account-creation time, falling back to sensible defaults if that metadata wasn't provided.
+
+  - **`returns trigger`** — this isn't a function I call directly — it's shaped specifically to run automatically in response to a database event (a trigger), a different kind of function in Postgres.
+  - **`new.id`, `new.email`** — inside a trigger, `new` refers to the row that was just inserted — here, the brand-new `auth.users` row. `new.id` is that user's freshly-created ID.
+  - **`coalesce(new.raw_user_meta_data->>'full_name', new.email)`** — `coalesce()` returns the first value here that isn't null. `->>'full_name'` reads the `full_name` key out of a JSON column. So this line says: use the full name if one was provided, otherwise fall back to their email address.
+  - **`coalesce(..., 'staff')`** — same pattern, but the fallback is a plain literal: if no role was specified, default to `'staff'` rather than `'admin'` — a deliberate least-privilege default.
+
 - **`team_members` and `site_settings`** have public, no-login-required read access — policies `"anyone can read team members"` and `"anyone can read site settings"` (both `SELECT`, condition simply `true`) — because the homepage that displays them is public. Writing to either still requires `is_admin()`.
 
 **File storage security** follows the same idea. There are three public Storage buckets — `team-photos`, `officer-photos`, `branding` — all readable by anyone (so `<img>` tags on the public homepage work without authentication), but every `INSERT`/`UPDATE`/`DELETE` policy on `storage.objects` checks `bucket_id = '<name>' AND (is_active_user() OR is_admin())` depending on the bucket, matching who's allowed to edit that kind of record in the database.
@@ -274,6 +415,65 @@ In plain terms: `is_active_user()` is true for anyone logged in whose account ha
 **Is any data pre-filled/seeded, versus created dynamically by users?** Two small reference tables were seeded once, directly in Supabase, to match the offices and categories already named in the thesis's own mockups and never needed a UI to create them: `categories` (5 fixed rows — ICT Equipment, Furniture, Motor Vehicle, Machinery, Other Assets) and `offices` (7 fixed rows — Mayor's Office, Civil Registry, Budget Office, Admin Office, MIS Office, GSO Warehouse, Motor Pool). There is no seed script file in the repository; this was a one-time setup step, and both tables remain fully editable afterward from Settings by an Admin. Every other table — `assets`, `accountable_officers`, `asset_assignments`, `par_records`, `ics_records`, `maintenance`, `disposal`, `alerts`, `team_members`, `site_settings`, and the two bootstrap `profiles` accounts — was created through the application's own forms, the same way any future real user would create them. Nothing about the live demo data is hard-coded into the app's code.
 
 **How authentication works.** Login is plain email + password via **Supabase Auth** (`supabase.auth.signInWithPassword()` in `src/app/login/actions.ts`) — no third-party login (Google, Facebook, etc.) and, deliberately, **no public self-registration route**. The only way a new account gets created is an Admin using `createStaffAccount` in Settings, which calls `supabase.auth.admin.createUser()` through the service-role client in `src/lib/supabase/admin.ts`. Session state is a secure, httponly cookie managed by `@supabase/ssr` — `src/proxy.ts` refreshes it on every request, and `src/lib/supabase/server.ts`/`client.ts` read it to know who's asking. Passwords themselves are never touched, hashed, or stored by this codebase at all — that's entirely handled inside Supabase Auth, which is a dedicated, audited identity provider rather than something built from scratch here. Two layers double-check permissions on every protected action: the route-level check in `proxy.ts`, and a second, independent check inside the page/action itself via `requireUser()`/`requireAdmin()` (`src/lib/supabase/auth.ts`) — the comment in that file is explicit about why: *"proxy.ts route matching alone is not sufficient."* Even if a route pattern were ever misconfigured, the server action itself still refuses to run for the wrong role.
+
+**`createStaffAccount`, the one function that intentionally bypasses RLS.** From `src/app/dashboard/settings/actions.ts`:
+
+```ts
+export async function createStaffAccount(
+  _prevState: FormActionState,
+  formData: FormData,
+): Promise<FormActionState> {
+  await requireAdmin();
+
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return {
+      error:
+        "SUPABASE_SERVICE_ROLE_KEY is not configured on the server. Add it to .env.local (get it from Supabase Dashboard > Project Settings > API Keys) to enable account creation.",
+    };
+  }
+
+  const email = formData.get("email") as string;
+  const password = formData.get("password") as string;
+  const fullName = formData.get("full_name") as string;
+  const role = formData.get("role") as string;
+
+  const admin = createAdminClient();
+  const { error } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { full_name: fullName, role },
+  });
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/dashboard/settings");
+  return { success: true };
+}
+```
+
+In plain terms: this is the only place in the entire codebase that creates a new login, and it's the one place that intentionally reaches for a more powerful client than everything else uses. `requireAdmin()` runs first, so only an admin ever gets this far. Then, instead of the normal Supabase client every other action uses — the one RLS applies to — this calls `createAdminClient()`, which authenticates with a secret service-role key instead of a user session and is allowed to bypass Row Level Security entirely. That's necessary here specifically because creating a brand-new login isn't something a logged-in user's own permissions should ever be able to do on their own.
+
+- **`!process.env.SUPABASE_SERVICE_ROLE_KEY`** — `process.env` is how server-side code reads environment variables/secrets. The `!` checks "if this is missing" — a guard so the app fails with a clear message instead of a confusing crash if that secret was never configured on the server.
+- **`user_metadata: { full_name: fullName, role }`** — building an object literal inline. `role` by itself (no colon) is shorthand for `role: role` — when a property name and the variable holding its value are spelled the same, JavaScript lets you skip repeating it.
+- **`admin.auth.admin.createUser(...)`** — the service-role-only method that actually creates the login — this is what ultimately triggers `handle_new_user()` above, since it inserts into `auth.users` under the hood.
+
+**How an RLS check actually happens — two independent gates.** This is the part that's easy to say in one sentence but hard to actually picture: the app-level checks from Section 4 and the database's own RLS checks are two separate systems that don't know about each other. Here's what happens end to end for one request to, say, `/dashboard/assets`:
+
+*Gate 1 — Application Layer*
+1. Browser requests `/dashboard/assets`.
+2. `proxy.ts` checks the session cookie — no valid session, and it redirects straight to `/login` before anything else runs.
+3. The page calls `requireUser()` (or `requireAdmin()` on admin-only routes) — a second, independent check that re-reads the profile's own status/role from the database.
+4. Only once that passes does the code even attempt `supabase.from("assets").select(...)`.
+
+↓
+
+*Gate 2 — Database Layer (independent of Gate 1)*
+5. That query arrives at Postgres carrying the logged-in user's identity, via the Supabase session.
+6. Before returning a single row, Postgres evaluates the table's RLS policy — e.g. `"active users read assets"` checks `is_active_user()`.
+7. `is_active_user()` runs its own separate query against `profiles`, right there inside the database. If it comes back false, Postgres quietly returns zero rows — not an error, just nothing — no matter what the application code upstream already decided.
+
+The point: even if step 2 or 3 somehow had a bug and let a request through it shouldn't have, step 6 would still block it — the database doesn't trust the application to have already checked. That's what **"RLS enforced at the database level, not just the interface"** actually means in practice, not just as a talking point.
 
 ---
 
@@ -287,6 +487,21 @@ In plain terms: `is_active_user()` is true for anyone logged in whose account ha
 
 **QR Sticker Generation & Printing** — *Problem:* the thesis calls for scannable asset tags, but a QR code alone is useless without a physical label to attach to real equipment. *How it works:* `generateQrDataUrl()` (`src/lib/qrcode.ts`) encodes the asset's `asset_code` as a QR image. `/dashboard/assets/[id]/sticker` renders a print-ready sheet of that code repeated in a grid (`StickerCopiesControl` lets staff pick how many copies, 1–24), styled at exact `1in` x `2.5in` physical dimensions with `print:hidden` on everything that shouldn't appear on paper. *A deliberate design decision:* this page is linked from wherever custody has just been established — the individual asset page, and directly from each row in Movement & Issuance once a transaction is saved — rather than being a separate, disconnected "batch print all stickers" screen. The reasoning: you don't actually know who to print a label *for* until you know who's receiving the asset, so printing has to happen at or after the point of issuance, not before it.
 
+The whole function, from `src/lib/qrcode.ts`:
+
+```ts
+import QRCode from "qrcode";
+
+export async function generateQrDataUrl(value: string): Promise<string> {
+  return QRCode.toDataURL(value, { margin: 1, width: 240 });
+}
+```
+
+In plain terms: this is the whole function. It hands the asset's code off to the `qrcode` library and asks for a data URL back — a self-contained image encoded directly as text, which means it can go straight into an `<img>` tag's `src` with no separate file to upload or host anywhere.
+
+- **`Promise<string>`** — a TypeScript return-type annotation: this function is `async`, so it doesn't return a string directly, it returns a `Promise` that eventually resolves to one. Anyone calling it needs `await` to get the actual string out.
+- **`{ margin: 1, width: 240 }`** — an options object passed as the second argument — the `qrcode` library's own settings for how much white border to leave and how many pixels wide to render the code.
+
 **Movement & Issuance (+ automatic PAR/ICS generation)** — *Problem:* every issue/return/transfer needs to produce an official, numbered paper trail. *How it works:* covered in full in Section 4's data-flow walkthrough — `createMovement` in `src/app/dashboard/movements/actions.ts` records the transaction and, when appropriate, automatically creates the linked receipt record with an auto-generated document number.
 
 **Printable PAR/ICS Receipts** — *Problem:* government property transactions require a signed Property Acknowledgement Receipt or Inventory Custodian Slip in a recognizable official format. *How it works:* `/dashboard/records/par/[id]` and `/dashboard/records/ics/[id]` are plain server-rendered pages styled to resemble the standard COA-format documents, each with a `PrintButton` that calls the browser's native `window.print()` — no PDF-generation library is used; the browser's own print engine (which every OS already has) handles pagination and output.
@@ -295,6 +510,96 @@ In plain terms: `is_active_user()` is true for anyone logged in whose account ha
 
 **Expiry & Lifecycle Tracker + Alerts** — *Problem:* warranties lapse and equipment ages without anyone tracking it centrally. *How it works:* `/dashboard/expiry` computes, per asset, days remaining until `expiration_date` (via `daysUntil()` in `src/lib/format.ts`) and a "life consumed" percentage bar (elapsed time since `acquisition_date` divided by total useful life), bucketed into Expired / ≤30 days / ≤90 days / Good Standing. The "Send Notifications" button (`SendNotificationsButton` → `generateAlerts()` in `src/app/dashboard/expiry/actions.ts`) scans every active asset's warranty, useful-life, and next-service dates against its own `alert_days_before` threshold and inserts a row into `alerts` for anything newly due, skipping assets that already have a pending alert of that type so it's safe to run repeatedly. *Being direct about a limitation here:* "Send Notifications" only creates in-app alert rows visible on the Alerts page — it does not send an email or SMS. There's no outbound messaging service wired up; it's a manual scan-and-flag tool, not a push-notification system.
 
+The full function, from `src/app/dashboard/expiry/actions.ts`:
+
+```ts
+export async function generateAlerts() {
+  await requireUser();
+  const supabase = await createClient();
+
+  const { data: assets } = await supabase
+    .from("assets")
+    .select("asset_id, asset_name, expiration_date, warranty_expiry, next_service_date, alert_days_before")
+    .neq("status", "disposed");
+
+  if (!assets) return { created: 0 };
+
+  const { data: existingAlerts } = await supabase
+    .from("alerts")
+    .select("asset_id, alert_type")
+    .eq("status", "pending");
+
+  const existingKey = new Set(
+    (existingAlerts ?? []).map((a) => `${a.asset_id}:${a.alert_type}`),
+  );
+
+  const toInsert: {
+    asset_id: number;
+    alert_type: "warranty" | "useful_life" | "maintenance";
+    alert_message: string;
+    alert_date: string;
+  }[] = [];
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  for (const asset of assets) {
+    const threshold = asset.alert_days_before ?? 30;
+
+    const checks: {
+      type: "warranty" | "useful_life" | "maintenance";
+      date: string | null;
+      label: string;
+    }[] = [
+      { type: "warranty", date: asset.warranty_expiry, label: "Warranty expires" },
+      { type: "useful_life", date: asset.expiration_date, label: "Useful life ends" },
+      { type: "maintenance", date: asset.next_service_date, label: "Maintenance due" },
+    ];
+
+    for (const check of checks) {
+      if (!check.date) continue;
+      const remaining = daysUntil(check.date);
+      if (remaining === null || remaining > threshold) continue;
+
+      const key = `${asset.asset_id}:${check.type}`;
+      if (existingKey.has(key)) continue;
+
+      const message =
+        remaining < 0
+          ? `${check.label} — overdue by ${Math.abs(remaining)} day(s)`
+          : `${check.label} in ${remaining} day(s)`;
+
+      toInsert.push({
+        asset_id: asset.asset_id,
+        alert_type: check.type,
+        alert_message: `${asset.asset_name}: ${message}`,
+        alert_date: today,
+      });
+      existingKey.add(key);
+    }
+  }
+
+  if (toInsert.length > 0) {
+    await supabase.from("alerts").insert(toInsert);
+  }
+
+  revalidatePath("/dashboard/alerts");
+  revalidatePath("/dashboard/expiry");
+  revalidatePath("/dashboard");
+  return { created: toInsert.length };
+}
+```
+
+In plain terms: this pulls every active asset, then checks each one's warranty date, useful-life end date, and next service date against its own alert threshold. Anything that's due soon — and doesn't already have a pending alert of that same type — gets queued up and inserted in one batch at the end. Running this twice in a row does nothing the second time, since already-flagged assets get skipped.
+
+- **`if (!assets) return { created: 0 };`** — an early return — if the query came back with nothing at all, stop right here instead of trying to loop over something that doesn't exist.
+- **`(existingAlerts ?? []).map(...)`** — `?? []` again: if `existingAlerts` happens to be `null`, fall back to an empty array so `.map()` has something safe to run on instead of crashing.
+- **`new Set(...)`** — a `Set` is a collection that automatically ignores duplicates. Building one here makes checking "have I already flagged this asset for this alert type" an instant lookup instead of searching through an array every time.
+- **`const toInsert: { ... }[] = []`** — a typed empty array — this annotation tells TypeScript exactly what shape of object is allowed to go into `toInsert` later, so a typo in one of those fields gets caught immediately instead of failing silently.
+- **`for (const asset of assets)`** — a `for...of` loop — runs the code inside once for every asset in the array, giving direct access to each one as `asset`.
+- **`asset.alert_days_before ?? 30`** — nullish coalescing again — if this asset was never given a custom alert threshold, default to 30 days.
+- **`` remaining < 0 ? `...overdue by...` : `...in ${remaining} day(s)` ``** — a ternary picking between two different template-literal messages depending on whether the date has already passed.
+- **`if (existingKey.has(key)) continue;`** — `continue` skips straight to the next loop iteration without running the rest of the code below it — here, skipping an alert type that's already been flagged for this asset.
+
 **Disposal & Write-off** — *Problem:* condemned/disposed assets need their own compliant record separate from active inventory. *How it works:* `createDisposal` records the disposal (method, appraisal value, inspection date, approving official) and simultaneously flips the asset's own `status` to `disposed`, removing it from active registry views. An Admin can mark a pending disposal `approved` via `markDisposalApproved`. *Deliberate scope limit:* this is a record-keeping and single-step approval flag, not a multi-stage approval workflow (routing, notifications, sign-offs) — that matches the thesis's own Chapter 1 scope, which explicitly excludes building a full approval-workflow engine.
 
 **Reports** — *Problem:* the office needs both a working-data export and a formal compliance document. *How it works:* `/api/reports/assets` is a real HTTP `GET` endpoint (not a Server Action, since a file download needs an actual URL) that hand-builds a CSV string (with a small `csvEscape()` helper for quoting fields containing commas/quotes/newlines) and returns it with a `Content-Disposition: attachment` header. `/dashboard/reports/rpcppe` renders a printable **Report on the Physical Count of Property, Plant and Equipment** — the standard COA-format compliance document — computed live from current asset data rather than being a static template.
@@ -302,6 +607,44 @@ In plain terms: `is_active_user()` is true for anyone logged in whose account ha
 **Settings (Staff Accounts, Categories, Offices, Homepage Team, Branding)** — *Problem:* an Admin needs to manage everything that isn't a day-to-day transaction, without touching code. *How it works:* one tabbed page (`src/app/dashboard/settings/page.tsx`), gated by `requireAdmin()`, covering: creating/deactivating Staff and Admin logins (no public sign-up exists anywhere in this system, by design — every account is Admin-provisioned, matching how a real government office issues system access); Categories and Offices CRUD; full CRUD on the public Homepage Team profiles; and Branding (logo + favicon upload, both falling back to the default GSO-PMS mark if left blank).
 
 **Accountable Officer Photos** — *Problem:* the client specifically asked for a way to visually confirm who's holding a piece of equipment, not just a name in a database. *How it works:* `OfficerFormDialog` uses `ImageUploadField` with a photo required — `createOfficer`/`updateOfficer` (`src/app/dashboard/officers/actions.ts`) explicitly reject the submission server-side if `photo_url` is empty (*"A photo is required so the office can identify the custodian on sight."*). Photos display as small clickable thumbnails (`PhotoLightbox`) throughout the Officers list, which open into a larger modal view on click and close on an outside click or Escape — both handled for free by the underlying Radix `Dialog` primitive, not custom-written.
+
+From `src/app/dashboard/officers/actions.ts`:
+
+```ts
+function parseOfficerForm(formData: FormData): TablesInsert<"accountable_officers"> {
+  const str = (key: string) => {
+    const value = formData.get(key);
+    return typeof value === "string" && value.length > 0 ? value : null;
+  };
+  // ...
+}
+
+export async function createOfficer(
+  _prevState: FormActionState,
+  formData: FormData,
+): Promise<FormActionState> {
+  await requireUser();
+
+  const parsed = parseOfficerForm(formData);
+  if (!parsed.photo_url) {
+    return { error: "A photo is required so the office can identify the custodian on sight." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("accountable_officers").insert(parsed);
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/dashboard/officers");
+  return { success: true };
+}
+```
+
+In plain terms: `parseOfficerForm()` first turns every blank text field into a real `null` instead of an empty string, so the database stores "nothing entered" accurately. Then `createOfficer()` checks specifically for a missing photo and refuses to save if one wasn't uploaded — this check runs on the server, so there's no way around it even by tampering with the form in the browser.
+
+- **`const str = (key: string) => { ... }`** — a small arrow function defined right inside `parseOfficerForm`, used only in this one file — it turns an empty form field into `null` instead of an empty string, so a blank "Employee No." is stored as genuinely empty rather than the text `""`.
+- **`typeof value === "string" && value.length > 0 ? value : null`** — `typeof` checks what kind of value `formData.get()` actually returned. Combined with the length check, this reads as: "if it's a non-empty string, keep it — otherwise, `null`."
+- **`if (!parsed.photo_url) { return { error: ... }; }`** — the actual enforcement of "a photo is required." This runs on the server, not just in the browser, so there's no way to submit an officer without a photo even by skipping the UI entirely.
 
 **In-App Documentation Page** — *Problem:* the team needs this same explanation available inside the actual deployed system, not only as an external file, so a professor or panelist looking at the live site can see it directly — without needing an account. *How it works:* `src/app/documentation/page.tsx` lives at the top level of the app (outside `/dashboard`), so it's a genuinely public route, unauthenticated, mirroring the content of this document as a single continuous page. *A deliberate decision:* it's intentionally left out of the sidebar navigation and out of every other page's links — it's only reachable if you already have the direct URL (`gsopms.gabrielsacro.com/documentation`), which keeps it out of the way for day-to-day Staff/Admin use while still being open for a defense panel to pull up on request.
 

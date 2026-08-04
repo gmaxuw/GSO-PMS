@@ -55,19 +55,174 @@ const flowSteps = [
   { n: "07", title: "revalidatePath() Invalidates the Cache", desc: "Next.js discards its cached render for that URL; the next view re-runs step 2 with fresh data." },
 ];
 
-const features: { name: string; body: string }[] = [
+const generateQrDataUrlBreakdown: [string, string][] = [
+  ["Promise<string>", "A TypeScript return-type annotation: this function is async, so it doesn't return a string directly, it returns a Promise that eventually resolves to one. Anyone calling it needs await to get the actual string out."],
+  ["{ margin: 1, width: 240 }", "An options object passed as the second argument — the qrcode library's own settings for how much white border to leave and how many pixels wide to render the code."],
+];
+
+const generateAlertsBreakdown: [string, string][] = [
+  ["if (!assets) return { created: 0 };", "An early return — if the query came back with nothing at all, stop right here instead of trying to loop over something that doesn't exist."],
+  ["(existingAlerts ?? []).map(...)", "?? [] again: if existingAlerts happens to be null, fall back to an empty array so .map() has something safe to run on instead of crashing."],
+  ["new Set(...)", "A Set is a collection that automatically ignores duplicates. Building one here makes checking \"have I already flagged this asset for this alert type\" an instant lookup instead of searching through an array every time."],
+  ["const toInsert: { ... }[] = []", "A typed empty array — this annotation tells TypeScript exactly what shape of object is allowed to go into toInsert later, so a typo in one of those fields gets caught immediately instead of failing silently."],
+  ["for (const asset of assets)", "A for...of loop — runs the code inside once for every asset in the array, giving direct access to each one as asset."],
+  ["asset.alert_days_before ?? 30", "Nullish coalescing again — if this asset was never given a custom alert threshold, default to 30 days."],
+  ["remaining < 0 ? `...overdue by...` : `...in ${remaining} day(s)`", "A ternary picking between two different template-literal messages depending on whether the date has already passed."],
+  ["if (existingKey.has(key)) continue;", "continue skips straight to the next loop iteration without running the rest of the code below it — here, skipping an alert type that's already been flagged for this asset."],
+];
+
+const createOfficerBreakdown: [string, string][] = [
+  ["const str = (key: string) => { ... }", "A small arrow function defined right inside parseOfficerForm, used only in this one file — it turns an empty form field into null instead of an empty string, so a blank \"Employee No.\" is stored as genuinely empty rather than the text \"\"."],
+  ["typeof value === \"string\" && value.length > 0 ? value : null", "typeof checks what kind of value formData.get() actually returned. Combined with the length check, this reads as: \"if it's a non-empty string, keep it — otherwise, null.\""],
+  ["if (!parsed.photo_url) { return { error: ... }; }", "The actual enforcement of \"a photo is required.\" This runs on the server, not just in the browser, so there's no way to submit an officer without a photo even by skipping the UI entirely."],
+];
+
+type Feature = {
+  name: string;
+  body: string;
+  code?: string;
+  codeFile?: string;
+  codeSummary?: string;
+  codeBreakdown?: [string, string][];
+};
+
+const features: Feature[] = [
   { name: "Public Homepage & Editable Team Profiles", body: "src/app/page.tsx renders one TeamMemberCard per team_members row, in the exact field order the thesis specifies (Name, Year Level, Course, Age, Sex, Address, Contact Number, Email Address, then a “5 Years From Now” quote). Every field, including the photo, is editable from Settings → Homepage Team rather than hard-coded." },
   { name: "Authentication & Role-Based Dashboard", body: "Supabase Auth handles identity; profiles.role (admin/staff) drives permissions, checked both by database RLS and by requireUser()/requireAdmin() in code. AppSidebar hides Settings entirely from Staff accounts." },
   { name: "Property Asset Registry", body: "assets/page.tsx lists every asset with live status/department filtering (AssetFilterBar, driven by URL search params) and search. AssetFormDialog handles both create and edit through the same component, switching between createAsset/updateAsset." },
-  { name: "QR Sticker Generation & Printing", body: "generateQrDataUrl() encodes each asset's asset_code as a QR image. The sticker sheet is linked from the asset detail page and directly from each Movement & Issuance row once a transaction is saved — deliberately after custody is known, not before, since you can't label a sticker for an officer you haven't assigned yet." },
-  { name: "Movement & Issuance + Automatic PAR/ICS", body: "createMovement records the transaction, keeps the asset's assigned_office_id in sync, and — when issuing or transferring to a named officer — auto-generates a linked par_records or ics_records row with an auto-numbered document like PAR-2026-0007, tied back to the exact transaction via assignment_id." },
+  {
+    name: "QR Sticker Generation & Printing",
+    body: "generateQrDataUrl() encodes each asset's asset_code as a QR image. The sticker sheet is linked from the asset detail page and directly from each Movement & Issuance row once a transaction is saved — deliberately after custody is known, not before, since you can't label a sticker for an officer you haven't assigned yet.",
+    codeFile: "src/lib/qrcode.ts",
+    code: `import QRCode from "qrcode";
+
+export async function generateQrDataUrl(value: string): Promise<string> {
+  return QRCode.toDataURL(value, { margin: 1, width: 240 });
+}`,
+    codeSummary: "In plain terms: this is the whole function. It hands the asset's code off to the qrcode library and asks for a data URL back — a self-contained image encoded directly as text, which means it can go straight into an <img> tag's src with no separate file to upload or host anywhere.",
+    codeBreakdown: generateQrDataUrlBreakdown,
+  },
+  { name: "Movement & Issuance + Automatic PAR/ICS", body: "createMovement records the transaction, keeps the asset's assigned_office_id in sync, and — when issuing or transferring to a named officer — auto-generates a linked par_records or ics_records row with an auto-numbered document like PAR-2026-0007, tied back to the exact transaction via assignment_id. The full function, with a line-by-line breakdown, is shown in Section 4." },
   { name: "Printable PAR/ICS Receipts", body: "/dashboard/records/par/[id] and .../ics/[id] render official-format receipts server-side; PrintButton just calls window.print() — no PDF library involved, the browser's own print engine handles it." },
   { name: "Scan-to-Verify", body: "AssetScanner lazy-loads html5-qrcode only when scanning starts, reads a QR code via the device camera, and looks the decoded text up against assets.asset_code, with a manual text-entry fallback for damaged labels or camera-less devices." },
-  { name: "Expiry & Lifecycle Tracker + Alerts", body: "Computes days remaining and a “life consumed” percentage per asset. “Send Notifications” (generateAlerts()) scans warranty/useful-life/maintenance thresholds and creates alerts rows for anything newly due. Worth being direct: this only creates in-app alerts — there is no email or SMS sending wired up." },
+  {
+    name: "Expiry & Lifecycle Tracker + Alerts",
+    body: "Computes days remaining and a “life consumed” percentage per asset. “Send Notifications” (generateAlerts()) scans warranty/useful-life/maintenance thresholds and creates alerts rows for anything newly due. Worth being direct: this only creates in-app alerts — there is no email or SMS sending wired up.",
+    codeFile: "src/app/dashboard/expiry/actions.ts",
+    code: `export async function generateAlerts() {
+  await requireUser();
+  const supabase = await createClient();
+
+  const { data: assets } = await supabase
+    .from("assets")
+    .select("asset_id, asset_name, expiration_date, warranty_expiry, next_service_date, alert_days_before")
+    .neq("status", "disposed");
+
+  if (!assets) return { created: 0 };
+
+  const { data: existingAlerts } = await supabase
+    .from("alerts")
+    .select("asset_id, alert_type")
+    .eq("status", "pending");
+
+  const existingKey = new Set(
+    (existingAlerts ?? []).map((a) => \`\${a.asset_id}:\${a.alert_type}\`),
+  );
+
+  const toInsert: {
+    asset_id: number;
+    alert_type: "warranty" | "useful_life" | "maintenance";
+    alert_message: string;
+    alert_date: string;
+  }[] = [];
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  for (const asset of assets) {
+    const threshold = asset.alert_days_before ?? 30;
+
+    const checks: {
+      type: "warranty" | "useful_life" | "maintenance";
+      date: string | null;
+      label: string;
+    }[] = [
+      { type: "warranty", date: asset.warranty_expiry, label: "Warranty expires" },
+      { type: "useful_life", date: asset.expiration_date, label: "Useful life ends" },
+      { type: "maintenance", date: asset.next_service_date, label: "Maintenance due" },
+    ];
+
+    for (const check of checks) {
+      if (!check.date) continue;
+      const remaining = daysUntil(check.date);
+      if (remaining === null || remaining > threshold) continue;
+
+      const key = \`\${asset.asset_id}:\${check.type}\`;
+      if (existingKey.has(key)) continue;
+
+      const message =
+        remaining < 0
+          ? \`\${check.label} — overdue by \${Math.abs(remaining)} day(s)\`
+          : \`\${check.label} in \${remaining} day(s)\`;
+
+      toInsert.push({
+        asset_id: asset.asset_id,
+        alert_type: check.type,
+        alert_message: \`\${asset.asset_name}: \${message}\`,
+        alert_date: today,
+      });
+      existingKey.add(key);
+    }
+  }
+
+  if (toInsert.length > 0) {
+    await supabase.from("alerts").insert(toInsert);
+  }
+
+  revalidatePath("/dashboard/alerts");
+  revalidatePath("/dashboard/expiry");
+  revalidatePath("/dashboard");
+  return { created: toInsert.length };
+}`,
+    codeSummary: "In plain terms: this pulls every active asset, then checks each one's warranty date, useful-life end date, and next service date against its own alert threshold. Anything that's due soon — and doesn't already have a pending alert of that same type — gets queued up and inserted in one batch at the end. Running this twice in a row does nothing the second time, since already-flagged assets get skipped.",
+    codeBreakdown: generateAlertsBreakdown,
+  },
   { name: "Disposal & Write-off", body: "createDisposal records the disposal and flips the asset's status to disposed. An Admin can mark it approved via markDisposalApproved. This is a record-and-flag flow, not a multi-stage approval workflow — matching the thesis's own Chapter 1 scope exclusion." },
   { name: "Reports", body: "/api/reports/assets is a real GET endpoint returning a hand-built CSV (needed because downloads require a real URL). /dashboard/reports/rpcppe renders a printable, live-computed RPCPPE compliance document." },
-  { name: "Settings", body: "One admin-only page (requireAdmin()) covering Staff Accounts (no public sign-up exists anywhere — every login is admin-provisioned), Categories, Offices, Homepage Team, and Branding (logo/favicon upload, falling back to the default mark if blank)." },
-  { name: "Accountable Officer Photos", body: "OfficerFormDialog requires a photo; createOfficer/updateOfficer explicitly reject the submission server-side if photo_url is empty. Photos display as clickable PhotoLightbox thumbnails that open into a modal, closing on outside click or Escape — both handled by the underlying Radix Dialog for free." },
+  { name: "Settings", body: "One admin-only page (requireAdmin()) covering Staff Accounts (no public sign-up exists anywhere — every login is admin-provisioned), Categories, Offices, Homepage Team, and Branding (logo/favicon upload, falling back to the default mark if blank). The createStaffAccount code, with a full breakdown, is shown in Section 5." },
+  {
+    name: "Accountable Officer Photos",
+    body: "OfficerFormDialog requires a photo; createOfficer/updateOfficer explicitly reject the submission server-side if photo_url is empty. Photos display as clickable PhotoLightbox thumbnails that open into a modal, closing on outside click or Escape — both handled by the underlying Radix Dialog for free.",
+    codeFile: "src/app/dashboard/officers/actions.ts",
+    code: `function parseOfficerForm(formData: FormData): TablesInsert<"accountable_officers"> {
+  const str = (key: string) => {
+    const value = formData.get(key);
+    return typeof value === "string" && value.length > 0 ? value : null;
+  };
+  // ...
+}
+
+export async function createOfficer(
+  _prevState: FormActionState,
+  formData: FormData,
+): Promise<FormActionState> {
+  await requireUser();
+
+  const parsed = parseOfficerForm(formData);
+  if (!parsed.photo_url) {
+    return { error: "A photo is required so the office can identify the custodian on sight." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("accountable_officers").insert(parsed);
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/dashboard/officers");
+  return { success: true };
+}`,
+    codeSummary: "In plain terms: parseOfficerForm() first turns every blank text field into a real null instead of an empty string, so the database stores \"nothing entered\" accurately. Then createOfficer() checks specifically for a missing photo and refuses to save if one wasn't uploaded — this check runs on the server, so there's no way around it even by tampering with the form in the browser.",
+    codeBreakdown: createOfficerBreakdown,
+  },
 ];
 
 const faqs: { q: string; a: string }[] = [
@@ -110,7 +265,7 @@ function SyntaxBreakdown({ items }: { items: [string, string][] }) {
     <div className="divide-y divide-border rounded-lg border border-border/60">
       {items.map(([token, desc]) => (
         <div key={token} className="grid grid-cols-1 gap-1 p-2.5 sm:grid-cols-[220px_1fr] sm:gap-4">
-          <code className="h-fit w-fit rounded bg-muted px-1.5 py-0.5 font-mono text-xs font-bold text-primary">
+          <code className="h-fit w-fit max-w-full rounded bg-muted px-1.5 py-0.5 font-mono text-xs font-bold break-all text-primary">
             {token}
           </code>
           <p className="text-xs leading-relaxed text-muted-foreground">{desc}</p>
@@ -146,6 +301,62 @@ const tableCellBreakdown: [string, string][] = [
   ["<TableCell>", "One of this project's table components — visually it's just a table cell, a <td>, in the end."],
   ["{ }", "Curly braces inside JSX mean \"stop treating this as plain text, run this as real TypeScript and print whatever it returns.\" Anything outside curly braces in JSX is static text; anything inside is a live value."],
   ["asset.asset_name", "Plain dot notation — reading the asset_name property off whichever asset object is currently being rendered, one per row of the table."],
+];
+
+const requireUserBreakdown: [string, string][] = [
+  ["async function requireUser()", "Marked async because it calls getCurrentProfile() inside, which is itself a database lookup and needs await."],
+  ["if (!profile || profile.status !== \"active\")", "The || means either condition alone is enough to fail the check: no profile at all, or a profile that exists but has been deactivated. !== reads as \"not equal to.\""],
+  ["redirect(\"/login\")", "A Next.js function that immediately stops the rest of this function from running and sends the browser to a different page. Nothing after this line executes once it's called."],
+  ["requireAdmin() calling await requireUser()", "Reuses the exact same check instead of duplicating it, then only adds the extra role check on top."],
+];
+
+const assetsRegistryQueryBreakdown: [string, string][] = [
+  ["let query = ...", "let, not const, on purpose this time — a few lines below this (not shown here), the code conditionally adds more filters onto query depending on which filters the user picked, so it genuinely does get reassigned."],
+  ["offices:assigned_office_id(office_name)", "The part before the colon (offices) is a rename, same idea as data: assets from the login example — Supabase would otherwise name this joined relation something less friendly, based on the foreign key column."],
+  [".order(\"created_at\", { ascending: false })", "Sorts by the created_at column, ascending: false meaning newest first."],
+];
+
+const createMovementBreakdown: [string, string][] = [
+  ["_prevState", "The leading underscore is a naming convention meaning \"this parameter is required by useActionState's function signature, but I don't actually use it in this function.\""],
+  ["formData.get(\"officer_id\") ? Number(...) : null", "A ternary: \"if this value exists, convert it to a number; otherwise use null.\" Shorter than a full if/else for a one-line decision."],
+  ["status === \"returned\" ? assignedDate : null", "Same ternary pattern, deciding what to store in returned_date based on the transaction type."],
+  ["`PAR-${year}-${String(assignment.assignment_id).padStart(4, \"0\")}`", "A template literal — backticks let me drop live values directly into a string with ${ } instead of gluing pieces together with +. .padStart(4, \"0\") pads the number with leading zeros until it's 4 digits long, so 7 becomes \"0007\"."],
+  ["error?.message ?? \"Failed to record transaction.\"", "Two things stacked. error?.message is optional chaining: if error happens to be null or undefined, the whole expression short-circuits instead of crashing on \".message\". ?? is nullish coalescing: if what's on the left is null or undefined, use the fallback text on the right."],
+  ["(status === \"issued\" || status === \"transferred\") && docType && officerId", "Reads left to right: only proceed past this line if the status is one of those two, AND a document type was picked, AND an officer is actually attached to this transaction."],
+];
+
+const rlsFunctionsBreakdown: [string, string][] = [
+  ["returns boolean", "This function always answers true or false, nothing else."],
+  ["security definer", "Normally a database function runs with the permissions of whoever's calling it. security definer means it instead runs with the permissions of whoever created it — necessary here because it needs to read the profiles table, and I don't want to separately grant every user direct read access to that table just so this check can work."],
+  ["auth.uid()", "A built-in Supabase function returning the ID of whoever is currently authenticated, based on their session — how the database knows who's asking without the application having to pass that in manually."],
+  ["exists (select 1 from ...)", "A standard SQL pattern for \"does at least one matching row exist,\" without caring what's in it — select 1 is a placeholder, not a real column, since exists only checks whether the subquery returns anything at all."],
+  ["where id = (select auth.uid()) and status = 'active'", "Both conditions have to be true for a row to count: the profile's own id has to match the logged-in user, and their status has to be active."],
+];
+
+const handleNewUserBreakdown: [string, string][] = [
+  ["returns trigger", "This isn't a function I call directly — it's shaped specifically to run automatically in response to a database event (a trigger), a different kind of function in Postgres."],
+  ["new.id, new.email", "Inside a trigger, new refers to the row that was just inserted — here, the brand-new auth.users row. new.id is that user's freshly-created ID."],
+  ["coalesce(new.raw_user_meta_data->>'full_name', new.email)", "coalesce() returns the first value here that isn't null. ->>'full_name' reads the full_name key out of a JSON column. So this line says: use the full name if one was provided, otherwise fall back to their email address."],
+  ["coalesce(..., 'staff')", "Same pattern, but the fallback is a plain literal: if no role was specified, default to 'staff' rather than 'admin' — a deliberate least-privilege default."],
+];
+
+const createStaffAccountBreakdown: [string, string][] = [
+  ["!process.env.SUPABASE_SERVICE_ROLE_KEY", "process.env is how server-side code reads environment variables/secrets. The ! checks \"if this is missing\" — a guard so the app fails with a clear message instead of a confusing crash if that secret was never configured on the server."],
+  ["user_metadata: { full_name: fullName, role }", "Building an object literal inline. role by itself (no colon) is shorthand for role: role — when a property name and the variable holding its value are spelled the same, JavaScript lets you skip repeating it."],
+  ["admin.auth.admin.createUser(...)", "The service-role-only method that actually creates the login — this is what ultimately triggers handle_new_user() above, since it inserts into auth.users under the hood."],
+];
+
+const rlsGate1: string[] = [
+  "Browser requests /dashboard/assets.",
+  "proxy.ts checks the session cookie — no valid session, and it redirects straight to /login before anything else runs.",
+  "The page calls requireUser() (or requireAdmin() on admin-only routes) — a second, independent check that re-reads the profile's own status/role from the database.",
+  "Only once that passes does the code even attempt supabase.from(\"assets\").select(...).",
+];
+
+const rlsGate2: string[] = [
+  "That query arrives at Postgres carrying the logged-in user's identity, via the Supabase session.",
+  "Before returning a single row, Postgres evaluates the table's RLS policy — e.g. \"active users read assets\" checks is_active_user().",
+  "is_active_user() runs its own separate query against profiles, right there inside the database. If it comes back false, Postgres quietly returns zero rows — not an error, just nothing — no matter what the application code upstream already decided.",
 ];
 
 export default async function PublicDocumentationPage() {
@@ -300,6 +511,66 @@ export default async function PublicDocumentationPage() {
               </Card>
             ))}
           </div>
+
+          <div className="space-y-4 rounded-lg border border-border/60 p-4">
+            <p className="text-sm font-semibold">
+              What steps 2 and 3 actually look like in code
+            </p>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Every protected page starts with one of these two, from{" "}
+              <code className="rounded bg-muted px-1">src/lib/supabase/auth.ts</code>.
+              In plain terms: <code className="rounded bg-muted px-1">requireUser()</code>{" "}
+              checks there&apos;s a logged-in profile and that it hasn&apos;t
+              been deactivated &mdash; if either check fails, it redirects to
+              the login page before rendering anything.{" "}
+              <code className="rounded bg-muted px-1">requireAdmin()</code>{" "}
+              reuses that same check and adds one more on top: if the
+              profile&apos;s role isn&apos;t admin, it sends them back to the
+              regular dashboard instead. I call whichever one a page actually
+              needs at the very top of the file, before any data gets
+              fetched.
+            </p>
+            <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs">
+{`export async function requireUser() {
+  const profile = await getCurrentProfile();
+  if (!profile || profile.status !== "active") {
+    redirect("/login");
+  }
+  return profile;
+}
+
+export async function requireAdmin() {
+  const profile = await requireUser();
+  if (profile.role !== "admin") {
+    redirect("/dashboard");
+  }
+  return profile;
+}`}
+            </pre>
+            <SyntaxBreakdown items={requireUserBreakdown} />
+
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              And this is the real query behind the Property Asset Registry
+              &mdash; not a simplified stand-in &mdash; from{" "}
+              <code className="rounded bg-muted px-1">src/app/dashboard/assets/page.tsx</code>.
+              In plain terms: same <code className="rounded bg-muted px-1">*</code> and
+              nested-relation trick as before, plus two more pieces:{" "}
+              <code className="rounded bg-muted px-1">offices:assigned_office_id(office_name)</code>{" "}
+              renames that joined relation to <code className="rounded bg-muted px-1">offices</code>{" "}
+              so the rest of the code can just write{" "}
+              <code className="rounded bg-muted px-1">asset.offices.office_name</code>, and{" "}
+              <code className="rounded bg-muted px-1">.order()</code> sorts
+              newest assets first before anything is even rendered.
+            </p>
+            <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs">
+{`let query = supabase
+  .from("assets")
+  .select("*, categories(category_name), offices:assigned_office_id(office_name)")
+  .order("created_at", { ascending: false });`}
+            </pre>
+            <SyntaxBreakdown items={assetsRegistryQueryBreakdown} />
+          </div>
+
           <p className="text-sm text-muted-foreground">
             Concrete example &mdash; issuing an asset:{" "}
             <code className="rounded bg-muted px-1">MovementFormDialog</code>{" "}
@@ -316,6 +587,101 @@ export default async function PublicDocumentationPage() {
             immediately viewable and printable at{" "}
             <code className="rounded bg-muted px-1">/dashboard/records/par/[id]</code>.
           </p>
+
+          <div className="space-y-4 rounded-lg border border-border/60 p-4">
+            <p className="text-sm font-semibold">
+              The actual createMovement code, from{" "}
+              <code className="rounded bg-muted px-1">src/app/dashboard/movements/actions.ts</code>
+            </p>
+            <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs">
+{`export async function createMovement(
+  _prevState: FormActionState,
+  formData: FormData,
+): Promise<FormActionState> {
+  await requireUser();
+  const supabase = await createClient();
+
+  const assetId = Number(formData.get("asset_id"));
+  const officerId = formData.get("officer_id")
+    ? Number(formData.get("officer_id"))
+    : null;
+  const officeId = formData.get("office_id")
+    ? Number(formData.get("office_id"))
+    : null;
+  const status = formData.get("status") as "issued" | "returned" | "transferred";
+  const assignedDate = formData.get("assigned_date") as string;
+  const remarks = (formData.get("remarks") as string) || null;
+  const docType = formData.get("doc_type") as "par" | "ics" | "";
+
+  const { data: assignment, error } = await supabase
+    .from("asset_assignments")
+    .insert({
+      asset_id: assetId,
+      officer_id: officerId,
+      office_id: officeId,
+      status,
+      assigned_date: assignedDate,
+      returned_date: status === "returned" ? assignedDate : null,
+      remarks,
+    })
+    .select("assignment_id")
+    .single();
+
+  if (error || !assignment) {
+    return { error: error?.message ?? "Failed to record transaction." };
+  }
+
+  // Keep the asset's current custody in sync with the latest movement.
+  await supabase
+    .from("assets")
+    .update({ assigned_office_id: status === "returned" ? null : officeId })
+    .eq("asset_id", assetId);
+
+  if ((status === "issued" || status === "transferred") && docType && officerId) {
+    const year = new Date(assignedDate).getFullYear();
+    if (docType === "par") {
+      await supabase.from("par_records").insert({
+        par_no: \`PAR-\${year}-\${String(assignment.assignment_id).padStart(4, "0")}\`,
+        asset_id: assetId,
+        officer_id: officerId,
+        assignment_id: assignment.assignment_id,
+        issue_date: assignedDate,
+        remarks,
+      });
+    } else {
+      await supabase.from("ics_records").insert({
+        ics_no: \`ICS-\${year}-\${String(assignment.assignment_id).padStart(4, "0")}\`,
+        asset_id: assetId,
+        officer_id: officerId,
+        assignment_id: assignment.assignment_id,
+        issue_date: assignedDate,
+        remarks,
+      });
+    }
+  }
+
+  revalidatePath("/dashboard/movements");
+  revalidatePath("/dashboard/assets");
+  revalidatePath("/dashboard/records");
+  revalidatePath("/dashboard");
+  return { success: true };
+}`}
+            </pre>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              In plain terms: this runs every time someone records an
+              issuance, return, or transfer. I insert the new{" "}
+              <code className="rounded bg-muted px-1">asset_assignments</code>{" "}
+              row first, then immediately update the asset&apos;s own current
+              custody so the registry always reflects the latest movement. If
+              it was an issuance or transfer to a named officer, I
+              auto-generate the matching PAR or ICS receipt with a document
+              number built from the year and the assignment&apos;s own ID
+              &mdash; so the numbering is automatic and can never collide. At
+              the end I tell Next.js which pages just went stale, so they
+              reload with fresh data the next time anyone views them.
+            </p>
+            <SyntaxBreakdown items={createMovementBreakdown} />
+          </div>
         </section>
 
         <Separator />
@@ -343,12 +709,40 @@ export default async function PublicDocumentationPage() {
             <CardContent className="space-y-3 text-sm text-muted-foreground">
               <p>
                 Two SQL helper functions back nearly every policy in the
-                database:
+                database. Here they are exactly as they exist in Postgres,
+                not paraphrased:
               </p>
               <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs">
-{`is_active_user()  -- true if the caller's profiles row has status = 'active'
-is_admin()        -- true if additionally role = 'admin'`}
+{`create function is_active_user() returns boolean
+  language sql stable security definer set search_path to 'public' as $$
+  select exists (
+    select 1 from public.profiles
+    where id = (select auth.uid()) and status = 'active'
+  );
+$$;
+
+create function is_admin() returns boolean
+  language sql stable security definer set search_path to 'public' as $$
+  select exists (
+    select 1 from public.profiles
+    where id = (select auth.uid()) and role = 'admin' and status = 'active'
+  );
+$$;`}
               </pre>
+              <p>
+                In plain terms: these are the two functions every RLS policy
+                in this database is built on. Both do the same basic thing
+                &mdash; look up the currently logged-in user&apos;s own row in{" "}
+                <code className="rounded bg-muted px-1">profiles</code> and
+                check something about it.{" "}
+                <code className="rounded bg-muted px-1">is_active_user()</code>{" "}
+                just checks <code className="rounded bg-muted px-1">status = &apos;active&apos;</code>.{" "}
+                <code className="rounded bg-muted px-1">is_admin()</code>{" "}
+                checks that plus <code className="rounded bg-muted px-1">role = &apos;admin&apos;</code>.
+                Postgres runs one of these, silently, on every single query
+                the app makes to a protected table.
+              </p>
+              <SyntaxBreakdown items={rlsFunctionsBreakdown} />
               <p>
                 Everyday tables (assets, accountable_officers,
                 asset_assignments, alerts, maintenance, par_records,
@@ -377,6 +771,41 @@ is_admin()        -- true if additionally role = 'admin'`}
                 homepage is unauthenticated, but writes still require{" "}
                 <code className="rounded bg-muted px-1">is_admin()</code>.
               </p>
+
+              <p>
+                Here&apos;s <code className="rounded bg-muted px-1">handle_new_user()</code>{" "}
+                itself, the trigger mentioned above:
+              </p>
+              <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs">
+{`create function handle_new_user() returns trigger
+  language plpgsql security definer set search_path to 'public' as $$
+begin
+  insert into public.profiles (id, email, full_name, role)
+  values (
+    new.id,
+    new.email,
+    coalesce(new.raw_user_meta_data->>'full_name', new.email),
+    coalesce(new.raw_user_meta_data->>'role', 'staff')
+  );
+  return new;
+end;
+$$;`}
+              </pre>
+              <p>
+                In plain terms: this fires automatically the instant a new
+                row shows up in Supabase&apos;s own{" "}
+                <code className="rounded bg-muted px-1">auth.users</code>{" "}
+                table &mdash; meaning the instant someone new signs up or
+                gets created by{" "}
+                <code className="rounded bg-muted px-1">createStaffAccount</code>.
+                It&apos;s the only thing that&apos;s ever allowed to insert
+                into <code className="rounded bg-muted px-1">profiles</code>,
+                and it fills in the name and role from whatever metadata was
+                passed in at account-creation time, falling back to sensible
+                defaults if that metadata wasn&apos;t provided.
+              </p>
+              <SyntaxBreakdown items={handleNewUserBreakdown} />
+
               <p>
                 File storage follows the same pattern: three public buckets
                 (team-photos, officer-photos, branding) are readable by
@@ -425,6 +854,135 @@ is_admin()        -- true if additionally role = 'admin'`}
               &mdash; &quot;proxy.ts route matching alone is not sufficient.&quot;
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">
+                createStaffAccount, the one function that intentionally bypasses RLS
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm text-muted-foreground">
+              <p>
+                From{" "}
+                <code className="rounded bg-muted px-1">src/app/dashboard/settings/actions.ts</code>:
+              </p>
+              <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs">
+{`export async function createStaffAccount(
+  _prevState: FormActionState,
+  formData: FormData,
+): Promise<FormActionState> {
+  await requireAdmin();
+
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return {
+      error:
+        "SUPABASE_SERVICE_ROLE_KEY is not configured on the server. Add it to .env.local (get it from Supabase Dashboard > Project Settings > API Keys) to enable account creation.",
+    };
+  }
+
+  const email = formData.get("email") as string;
+  const password = formData.get("password") as string;
+  const fullName = formData.get("full_name") as string;
+  const role = formData.get("role") as string;
+
+  const admin = createAdminClient();
+  const { error } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { full_name: fullName, role },
+  });
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/dashboard/settings");
+  return { success: true };
+}`}
+              </pre>
+              <p>
+                In plain terms: this is the only place in the entire codebase
+                that creates a new login, and it&apos;s the one place that
+                intentionally reaches for a more powerful client than
+                everything else uses.{" "}
+                <code className="rounded bg-muted px-1">requireAdmin()</code>{" "}
+                runs first, so only an admin ever gets this far. Then, instead
+                of the normal Supabase client every other action uses &mdash;
+                the one RLS applies to &mdash; this calls{" "}
+                <code className="rounded bg-muted px-1">createAdminClient()</code>,
+                which authenticates with a secret service-role key instead of
+                a user session and is allowed to bypass Row Level Security
+                entirely. That&apos;s necessary here specifically because
+                creating a brand-new login isn&apos;t something a logged-in
+                user&apos;s own permissions should ever be able to do on
+                their own.
+              </p>
+              <SyntaxBreakdown items={createStaffAccountBreakdown} />
+            </CardContent>
+          </Card>
+
+          <Card className="border-sky-200 bg-sky-50/50">
+            <CardHeader>
+              <CardTitle className="text-base">
+                How an RLS check actually happens &mdash; two independent gates
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm leading-relaxed text-muted-foreground">
+              <p>
+                This is the part that&apos;s easy to say in one sentence but
+                hard to actually picture: the app-level checks from Section 4
+                and the database&apos;s own RLS checks are two separate
+                systems that don&apos;t know about each other. Here&apos;s
+                what happens end to end for one request to, say,{" "}
+                <code className="rounded bg-muted px-1">/dashboard/assets</code>:
+              </p>
+
+              <div className="rounded-lg border border-border/60 bg-background p-3">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Gate 1 &mdash; Application Layer
+                </p>
+                <div className="space-y-2">
+                  {rlsGate1.map((step, i) => (
+                    <div key={step} className="flex items-start gap-3">
+                      <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-foreground text-[10px] font-bold text-background">
+                        {i + 1}
+                      </div>
+                      <p className="text-xs leading-relaxed text-muted-foreground">{step}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <p className="text-center text-lg leading-none text-sky-600">&darr;</p>
+
+              <div className="rounded-lg border border-sky-300 bg-sky-100/60 p-3">
+                <p className="mb-2 text-xs font-semibold tracking-wide text-sky-800 uppercase">
+                  Gate 2 &mdash; Database Layer (independent of Gate 1)
+                </p>
+                <div className="space-y-2">
+                  {rlsGate2.map((step, i) => (
+                    <div key={step} className="flex items-start gap-3">
+                      <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-sky-600 text-[10px] font-bold text-white">
+                        {i + 5}
+                      </div>
+                      <p className="text-xs leading-relaxed text-sky-900">{step}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <p>
+                The point: even if step 2 or 3 somehow had a bug and let a
+                request through it shouldn&apos;t have, step 6 would still
+                block it &mdash; the database doesn&apos;t trust the
+                application to have already checked. That&apos;s what{" "}
+                <strong className="text-foreground">
+                  &ldquo;RLS enforced at the database level, not just the
+                  interface&rdquo;
+                </strong>{" "}
+                actually means in practice, not just as a talking point.
+              </p>
+            </CardContent>
+          </Card>
         </section>
 
         <Separator />
@@ -437,8 +995,22 @@ is_admin()        -- true if additionally role = 'admin'`}
                 <CardHeader>
                   <CardTitle className="text-base">{f.name}</CardTitle>
                 </CardHeader>
-                <CardContent className="text-sm leading-relaxed text-muted-foreground">
-                  {f.body}
+                <CardContent className="space-y-4 text-sm leading-relaxed text-muted-foreground">
+                  <p>{f.body}</p>
+                  {f.code && (
+                    <>
+                      {f.codeFile && (
+                        <p className="text-xs">
+                          From <code className="rounded bg-muted px-1">{f.codeFile}</code>:
+                        </p>
+                      )}
+                      <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs">
+                        {f.code}
+                      </pre>
+                      {f.codeSummary && <p>{f.codeSummary}</p>}
+                      {f.codeBreakdown && <SyntaxBreakdown items={f.codeBreakdown} />}
+                    </>
+                  )}
                 </CardContent>
               </Card>
             ))}
